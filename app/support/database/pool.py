@@ -35,6 +35,8 @@ def create_pool(credentials: DatabaseCredentials, settings: Settings) -> Connect
 
 
 def _configure(conn: Connection[Any]) -> None:
+    # register_vector needs the type; on a fresh database the extension may not exist yet.
+    conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
     register_vector(conn)
     # The pool requires connections to be idle after configure.
     conn.commit()

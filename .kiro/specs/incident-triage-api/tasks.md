@@ -72,18 +72,18 @@ flowchart LR
   - [x] 4.3 Write output models `AssistAnswer`, `CatalogBatch` and `cli schemas`; confirm they match `prompts/*.config.json`
     - _Requirements: 9.8_
 
-- [ ] 5. Services, routes and CLI (after 2, 3 and 4)
-  - [ ] 5.1 Implement `SearchService` (search and candidates, stored query embeddings) and `IncidentService`
+- [x] 5. Services, routes and CLI (after 2, 3 and 4)
+  - [x] 5.1 Implement `SearchService` (search and candidates, stored query embeddings) and `IncidentService`
     - _Requirements: 10.1-10.8, 11.1, 11.2_
-  - [ ] 5.2 Implement `CatalogService` (defaults, limits, one LLM call per service, exact count, save and get)
+  - [x] 5.2 Implement `CatalogService` (defaults, limits, one LLM call per service, exact count, save and get)
     - _Requirements: 5.1-5.6_
-  - [ ] 5.3 Implement `guardrails.validate` and `AssistService` (n × 5 candidates, full records, prompt, one LLM call, status, top 5 never padded, step logs)
+  - [x] 5.3 Implement `guardrails.validate` and `AssistService` (n × 5 candidates, full records, prompt, one LLM call, status, top 5 never padded, step logs)
     - _Requirements: 12.1-12.8, 13.9_
-  - [ ] 5.4 Implement `container.build_container`, `api/deps.py`, the FastAPI lifespan and the exception handler
+  - [x] 5.4 Implement `container.build_container`, `api/deps.py`, the FastAPI lifespan and the exception handler
     - _Requirements: 3.4, 3.5, 14.4_
-  - [ ] 5.5 Implement routes: `POST /ingest`, `GET /search`, `GET /incidents/{id}`, `POST /assist`, `GET /catalog`, `GET /debug/trace/{correlation_id}`, `GET /health`, all with `traced_endpoint` except `/debug/trace`
+  - [x] 5.5 Implement routes: `POST /ingest`, `GET /search`, `GET /incidents/{id}`, `POST /assist`, `GET /catalog`, `GET /debug/trace/{correlation_id}`, `GET /health`, all with `traced_endpoint` except `/debug/trace`
     - _Requirements: 7.2-7.4, 10.1, 11.1, 12.1, 5.5, 13.5, 14.5_
-  - [ ] 5.6 Implement `app/cli.py`: `schema`, `catalog`, `seed`, `schemas`
+  - [x] 5.6 Implement `app/cli.py`: `schema`, `catalog`, `seed`, `schemas`
     - _Requirements: 1.5_
 
 - [ ] 6. End-to-end run on EC2 (checkpoint: structure works)

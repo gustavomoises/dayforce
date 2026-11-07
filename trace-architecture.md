@@ -143,6 +143,7 @@ Each step of the take-home list is an observation or an event, so Langfuse and `
 - Event metadata holds `correlation_id` and `logger`, each cut to 200 characters (Langfuse metadata limit).
 - A send failure is suppressed; the stdout line is already written and the request continues. A guard stops SDK log records from looping back into the handler.
 - `httpx`, `httpcore`, `botocore`, `urllib3` and `openai` loggers are set to `WARNING`, because Langfuse already records those calls.
+- uvicorn's own handlers are removed and its loggers propagate to the JSON handler. Access lines are logged inside the request's context, so they carry the `correlation_id` too. Startup and shutdown lines have no request, so their `correlation_id` is null.
 
 ## `GET /debug/trace/{correlation_id}`
 

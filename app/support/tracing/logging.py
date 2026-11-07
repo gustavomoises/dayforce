@@ -27,6 +27,9 @@ _forwarding: ContextVar[bool] = ContextVar("langfuse_log_forwarding", default=Fa
 IO_FIELD = "io"
 # Library request logs duplicate what Langfuse already records; keep only their warnings.
 _QUIET_LOGGERS = ("httpx", "httpx2", "httpcore", "httpcore2", "botocore", "urllib3", "openai")
+# uvicorn installs its own plain-text handlers; route its records through the JSON handler so
+# access lines carry the correlation_id (they are logged inside the request's context).
+_SERVER_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 
 def configure_logging(level: int | str, langfuse: Langfuse | None = None) -> None:
@@ -44,6 +47,10 @@ def configure_logging(level: int | str, langfuse: Langfuse | None = None) -> Non
     logging.basicConfig(level=level, handlers=handlers, force=True)
     for name in _QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+    for name in _SERVER_LOGGERS:
+        server_logger = logging.getLogger(name)
+        server_logger.handlers.clear()
+        server_logger.propagate = True
 
 
 def current_observation_id() -> str | None:

@@ -1,6 +1,6 @@
 # PROMPTS
 
-Ten prompts from the build, picked from [docs/prompt-log.md](docs/prompt-log.md) (log number in brackets). Prompts are copied as typed, typos included.
+Ten prompts from the build, picked from [docs/prompt-log.md](docs/prompt-log.md) (log number in brackets). Prompts are copied as typed, with spelling and typos corrected; the wording and meaning are unchanged. The raw text is in the prompt log.
 
 All work used Kiro: a spec first (requirements, design, tasks in `.kiro/specs/incident-triage-api/`), then sub-agents working in parallel on separate streams, then owner review on the EC2 deployment and correction prompts before each commit.
 
@@ -26,12 +26,12 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    project architecture: Create a md called architectre.md; each endpoint of fastAPi is hollow that call a service, I want a service layer (business layer) and support layer (langfuse, opeai, datbase). Each model is in a older inside each service, Just add be wise to where you add the moldel, never add model in a lower service that is use in a upservce. chaeck my architecture with incident-trige-take-home. create memrmaid daigrams to ilustrate. you also need to do unit tests for each component, service,...reade the icinident traigem and check if the architectureproposes is good and whoud you suggest to improve.
+    Project architecture: create an md called architecture.md. Each FastAPI endpoint is hollow and calls a service. I want a service layer (business layer) and a support layer (Langfuse, OpenAI, database). Each model is in a folder inside each service. Just be wise about where you add the model: never add a model in a lower service that is used in an upper service. Check my architecture against incident-triage-take-home. Create Mermaid diagrams to illustrate. You also need to do unit tests for each component, service, ... Read the incident triage take-home and check if the proposed architecture is good, and what you would suggest to improve.
     ```
 * Result summary: `architecture.md` with entry, service and support layers, the folder structure, Mermaid diagrams, a test plan and a check against the take-home.
 * What you kept: thin routes that call a service, the service and support layers, one test file per component.
 * What you changed manually (and why): the first draft was far too long, so I asked for a short document. I accepted the AI's suggestion of a `core` layer, because shared models (`Incident`, `SearchFilters`) would otherwise force a lower layer to import from a higher one.
-* Any follow up prompt(s): "I asked for a md not a PhD thesis" (part of the follow-up).
+* Any follow up prompt(s): "I asked for an md, not a PhD thesis" (part of the follow-up).
 * Link to code/commit: [8f55175](https://github.com/gustavomoises/dayforce/commit/8f55175) (services, routes, CLI on this structure), [architecture.md](architecture.md)
 
 ---
@@ -43,7 +43,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    you are worng we will poulate first with the see service and aply the ingest service it is the opposite, ignets service is aservice that will be used toa dd later
+    You are wrong. We will populate first with the seed service and apply the ingest service; it is the opposite. The ingest service is a service that will be used to add incidents later.
     ```
 * Result summary: `SeedService` generates incidents from the catalog and passes them to `IngestService`. `IngestService` is the single write path, reused by `POST /ingest`.
 * What you kept: the corrected direction and one write path for seed and API.
@@ -60,7 +60,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    I want you to add key .to incente for SHA256 encruption of whr incident. we will create a JSON object and clear the text of extra space and especial cahracters, so we can check if you are not addinf a similar incidente
+    I want you to add a key to the incident: a SHA256 encryption of the whole incident. We will create a JSON object and clear the text of extra spaces and special characters, so we can check that you are not adding a similar incident.
     ```
 * Result summary: canonical JSON of the normalized incident, hashed with SHA-256 into a unique `content_hash` column. Ingest counts a hash that belongs to another id as `duplicates`.
 * What you kept: the canonical JSON and SHA-256 hash, excluding `id` and dates.
@@ -68,7 +68,7 @@ flowchart LR
 * Any follow up prompt(s):
 
     ```
-    I would recommend to add the tags in alphabetical order, and remove any null property. In the database service we will ned to add a defenseive check: enviroment must be in types, like service and severity. if not we will need to skip and count that and the service reply
+    I would recommend adding the tags in alphabetical order and removing any null property. In the database service we will need to add a defensive check: environment must be in the types, like service and severity. If not, we will need to skip it and count it in the service reply.
     ```
 * Link to code/commit: [8f55175](https://github.com/gustavomoises/dayforce/commit/8f55175), [app/core/fingerprint.py](app/core/fingerprint.py), [app/services/ingest/plan.py](app/services/ingest/plan.py)
 
@@ -81,7 +81,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    what is the best embedding that you recommend that is active in openAI and what whould be embedded
+    What is the best embedding model that you recommend that is active in OpenAI, and what would be embedded?
     ```
 * Result summary: `text-embedding-3-small` (1536 dimensions) over labeled plain text of title, description and resolution.
 * What you kept: the model and the embedded text.
@@ -89,10 +89,10 @@ flowchart LR
 * Any follow up prompt(s):
 
     ```
-    you are worng on of them was deprecated and theres ada-002
+    You are wrong: one of them was deprecated, and there's ada-002.
     ```
     ```
-    ia notcrazy Yes, OpenAI sent an email to developers stating that text-embedding-3-small would be deprecated, but they quickly reversed it and admitted it was a mistake.
+    I am not crazy. Yes, OpenAI sent an email to developers stating that text-embedding-3-small would be deprecated, but they quickly reversed it and admitted it was a mistake.
     ```
 * Link to code/commit: [app/support/llm/openai_embedder.py](app/support/llm/openai_embedder.py), [app/core/embedding_text.py](app/core/embedding_text.py)
 
@@ -105,7 +105,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    that is why I didn;t undersatnd your question Langfuse is the guardian of the tracing don;t try to do its job
+    That is why I didn't understand your question. Langfuse is the guardian of the tracing; don't try to do its job.
     ```
 * Result summary: the in-memory trace store and custom span tree were removed. `traced` is Langfuse `@observe`, and `GET /debug/trace/{correlation_id}` reads observations back from Langfuse unchanged.
 * What you kept: Langfuse as the only trace store, trace ids derived from the correlation id.
@@ -122,7 +122,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    groups don't have to have the same title, they should be related if the llm says incidents are related; use the most relevant as first one and say these are related incidents of this relevant ticket
+    Groups don't have to have the same title; incidents should be related if the LLM says they are related. Use the most relevant as the first one, and say these are related incidents of this relevant ticket.
     ```
 * Result summary: the text-hash clustering was removed. The `incident-assist` prompt gives each relevant candidate a global `rank`, a `group` and a `group_reason`. The response has one entry per group, led by its best-ranked incident, with the other members under `related`.
 * What you kept: one global relevance order, groups numbered by first appearance in rank order, top 5 counted in groups.
@@ -130,11 +130,11 @@ flowchart LR
 * Any follow up prompt(s):
 
     ```
-    let's see if you got ticket A group1 relevance 1, ticketB group 1 relevance 2, ticket C group 2 relevance 3
+    Let's see if you got it: ticket A group 1 relevance 1, ticket B group 1 relevance 2, ticket C group 2 relevance 3.
     ```
     ```
-    add a reason for grouping
-    add clustering group rules
+    Add a reason for grouping.
+    Add clustering group rules.
     ```
 * Link to code/commit: [a6749c3](https://github.com/gustavomoises/dayforce/commit/a6749c3) (LLM related grouping), [c965b9a](https://github.com/gustavomoises/dayforce/commit/c965b9a) (rank + group), [694ad05](https://github.com/gustavomoises/dayforce/commit/694ad05) (group_reason + clustering rules)
 
@@ -147,7 +147,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    after the response from LLM you check if the incident exists based on the most similar call? never trust LLM with real data always check the output based on the input. if it doesn't exist remove this from the response
+    After the response from the LLM, do you check if the incident exists based on the most-similar call? Never trust the LLM with real data; always check the output against the input. If it doesn't exist, remove it from the response.
     ```
 * Result summary: `guardrails.ground` and `screening.ground_verdicts` remove ids that were not sent to the LLM, drop next steps that cite no incident or a non-relevant one, and renumber ranks and groups. Titles, environment, severity and dates come from the database.
 * What you kept: removing unknown ids instead of failing, and the citation check on next steps.
@@ -164,7 +164,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    yes   (to the proposal: valid only for the same failure type; a shared product area or generic word is not enough; the verdict must agree with the reason)
+    Yes.   (to the proposal: valid only for the same failure type; a shared product area or generic word is not enough; the verdict must agree with the reason)
     ```
 * Result summary: `incident-validation` v4. A hit is valid only for the same failure type (and product area when the question names one). An area-only or word-only match is invalid. The verdict must agree with its reason.
 * What you kept: the three new rules; the prompt config is unchanged.
@@ -181,7 +181,7 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    when you write the code because of the time you will need to rly in other agents, tell teh agenst to be samert and concise and find elagant and simple solutions taht are afective, following the best practive and design pattern. make the code pristine
+    When you write the code, because of the time, you will need to rely on other agents. Tell the agents to be smart and concise and to find elegant and simple solutions that are effective, following best practices and design patterns. Make the code pristine.
     ```
 * Result summary: an always-included steering file, `.kiro/steering/code-standards.md` (spec as source of truth, layers, style, patterns, definition of done), repeated in each sub-agent's instructions.
 * What you kept: the steering file and strict file ownership per stream.
@@ -189,7 +189,7 @@ flowchart LR
 * Any follow up prompt(s):
 
     ```
-    finsih all the unit tests in 7 use up 3 agents in parallel please
+    Finish all the unit tests in task 7. Use up to 3 agents in parallel, please.
     ```
 * Link to code/commit: [7f5d4b0](https://github.com/gustavomoises/dayforce/commit/7f5d4b0) (first unit tests), [fb9c856](https://github.com/gustavomoises/dayforce/commit/fb9c856) (full unit suite, 343 tests, and the 500 correlation fix)
 
@@ -202,8 +202,8 @@ flowchart LR
 * Prompt (copy/paste):
 
     ```
-    why can't we have it on is insert other is update? or both updates?
-    winner takes all. do what is best and inform the decission
+    Why can't we have one as an insert and the other as an update? Or both as updates?
+    Winner takes all. Do what is best and explain the decision.
     ```
 * Result summary: last version wins. Items apply in order and the id is written once. A re-run leaves rows and embeddings unchanged (no OpenAI call) but may count the repeated items as `updated`.
 * What you kept: last version wins, recorded in requirement 7.9a and design Property 3.

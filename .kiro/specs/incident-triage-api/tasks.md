@@ -116,20 +116,20 @@ flowchart LR
     - _Requirements: 10.1, 12.7, 13.2, 13.7_
   - [x] 6.5 Check `/assist` after 5.8 and 5.9 (groups, `group_reason`, grounding)
     - _Requirements: 12.1d, 12.5_
-  - [ ] 6.6 Check `/incidents/{id}` and an unknown id (404)
+  - [x] 6.6 Check `/incidents/{id}` and an unknown id (404)
     - _Requirements: 11.1, 11.2_
-  - [ ] 6.7 Check `/catalog`
+  - [x] 6.7 Check `/catalog`
     - _Requirements: 5.5_
-  - [ ] 6.8 Check `/ingest` twice (second run all skipped) and with an empty body (embeds pending only)
+  - [x] 6.8 Check `/ingest` twice (second run all skipped) and with an empty body (embeds pending only)
     - _Requirements: 7.11, 8.5_
-  - [ ] 6.9 Check one failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
+  - [x] 6.9 Check one failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
     - _Requirements: 14.4_
   - [x] 6.10 Tighten `incident-validation`: it judges strictly in the first batch and loosely in later ones (passed "concerns payment failures")
     - _Requirements: 12.1a_
   - [ ] 6.11 Fix issues found; repeat until all endpoints work
 
 - [ ] 7. Unit tests (start after task 6 passes)
-  - [ ] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)
+  - [x] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)
     - _Requirements: 12.5, 10.6_
   - [ ] 7.1 Core: `normalize`, `fingerprint`, `embedding_text`, settings, secrets loader
     - _Requirements: 2.2, 7.5, 7.7, 8.1_

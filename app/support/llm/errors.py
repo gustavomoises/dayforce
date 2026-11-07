@@ -22,7 +22,10 @@ def to_domain_error(
 ) -> AppError:
     """Timeout -> LLMTimeout; key rejected, network, rate limit or 5xx -> `unavailable`."""
     if isinstance(exc, openai.APITimeoutError):
-        return LLMTimeout(f"OpenAI did not answer within {timeout_seconds:g} s")
+        return LLMTimeout(
+            f"OpenAI did not answer within {timeout_seconds:g} s; retry, or raise "
+            "LLM_TIMEOUT_SECONDS (embeddings: EMBEDDING_TIMEOUT_SECONDS) and restart the API"
+        )
     if isinstance(exc, openai.AuthenticationError | openai.PermissionDeniedError):
         return unavailable(f"OpenAI rejected the API key; check secret `{OPENAI_SECRET}`")
     if isinstance(exc, openai.APIStatusError):

@@ -7,6 +7,7 @@ from langfuse.api.core.api_error import ApiError
 from app.core.errors import LangfuseUnavailable, TraceNotReady
 from app.core.models.trace import TraceView
 from app.core.settings import Settings
+from app.support.langfuse.client import UNREACHABLE
 
 # metadata carries the step log fields (q, filters, hits, top_ids, selected_ids).
 _FIELDS = "core,basic,io,metadata"
@@ -32,7 +33,7 @@ class LangfuseTraceReader:
                 )
             url = self._langfuse.get_trace_url(trace_id=trace_id)
         except (ApiError, httpx.HTTPError) as exc:
-            raise LangfuseUnavailable("Langfuse unreachable, check keys / network") from exc
+            raise LangfuseUnavailable(UNREACHABLE) from exc
         return TraceView(
             correlation_id=correlation_id,
             trace_id=trace_id,

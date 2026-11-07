@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.core.errors import LangfuseUnavailable, PromptConfigInvalid, PromptLabelMissing
 from app.core.models.prompt import CompiledPrompt, LLMConfig
+from app.support.langfuse.client import UNREACHABLE
 from app.support.tracing.span import traced
 
 
@@ -43,7 +44,7 @@ class LangfusePromptProvider:
                 f"prompt `{name}` has no label `{label}`; add it in Langfuse"
             ) from exc
         except (ApiError, httpx.HTTPError) as exc:
-            raise LangfuseUnavailable("Langfuse unreachable, check keys / network") from exc
+            raise LangfuseUnavailable(UNREACHABLE) from exc
 
 
 def _parse_config(prompt: TextPromptClient) -> LLMConfig:

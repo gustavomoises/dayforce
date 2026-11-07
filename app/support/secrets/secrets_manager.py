@@ -37,7 +37,10 @@ def _read(client: Any, name: str, keys: tuple[str, ...]) -> dict[str, Any]:
     try:
         raw = client.get_secret_value(SecretId=name)["SecretString"]
     except (ClientError, BotoCoreError) as exc:
-        raise ConfigurationError(f"secret {name} is not readable: {type(exc).__name__}") from None
+        raise ConfigurationError(
+            f"secret {name} is not readable ({type(exc).__name__}); check AWS_REGION and that "
+            "the instance role allows secretsmanager:GetSecretValue on it"
+        ) from None
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:

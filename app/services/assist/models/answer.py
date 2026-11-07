@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict
 
 
 class CandidateAssessment(BaseModel):
-    """The LLM's verdict on one retrieved incident."""
+    """The LLM's verdict on one retrieved incident.
+
+    A relevant record is either ranked (`related_to` null) or attached to the ranked record it
+    is related to (`related_to` = that record's id, `rank` null).
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -15,6 +19,7 @@ class CandidateAssessment(BaseModel):
     reason: str
     rank: int | None
     rank_justification: str | None
+    related_to: str | None
 
 
 class AssistAnswer(BaseModel):

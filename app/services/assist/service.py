@@ -4,8 +4,6 @@ import json
 import logging
 from collections.abc import Sequence
 
-from app.core.embedding_text import embedding_text
-from app.core.fingerprint import text_hash
 from app.core.models.filters import SearchFilters
 from app.core.models.incident import Incident
 from app.core.ports import LLMClient, PromptProvider
@@ -64,14 +62,15 @@ class AssistService:
                 extra={"io": "output", "selected_ids": [], "relevant_count": 0},
             )
             return _no_match(validation)
-        incidents, clusters = _cluster(self._incidents.get_many([hit.id for hit in hits]))
+        incidents = self._incidents.get_many([hit.id for hit in hits])
         prompt = self._prompts.get(
             PROMPT_NAME, _prompt_variables(request.question, filters, incidents), label
         )
         answer = self._llm.complete(prompt, AssistAnswer).output
         selected = self._select(answer, [incident.id for incident in incidents])
-        titles = {incident.id: incident.title for incident in incidents}
-        relevant = [_relevant_incident(c, titles[c.id], clusters.get(c.id, [])) for c in selected]
+        by_id = {incident.id: incident for incident in incidents}
+        related = guardrails.related_by_ranked(answer)
+        relevant = [_relevant_incident(c, by_id, related.get(c.id, [])) for c in selected]
         return AssistResponse(
             status="answered" if relevant else "no_relevant_incidents",
             relevant_incidents=relevant,
@@ -94,35 +93,14 @@ class AssistService:
             extra={
                 "io": "output",
                 "selected_ids": [c.id for c in selected],
+                "related": {
+                    ranked: [c.id for c in group]
+                    for ranked, group in guardrails.related_by_ranked(answer).items()
+                },
                 "relevant_count": sum(c.relevant for c in answer.candidates),
             },
         )
         return selected
-
-
-def _cluster(incidents: Sequence[Incident]) -> tuple[list[Incident], dict[str, list[Incident]]]:
-    """Group valid incidents with identical text; the first (most similar) represents the group.
-
-    Returns the representatives, sent to the assist prompt so no failure is ranked twice, and
-    for each representative the other valid incidents in its group (the cluster).
-    """
-    clusters: dict[str, list[Incident]] = {}
-    for incident in incidents:
-        key = text_hash(
-            embedding_text(incident.title, incident.description, incident.resolution_summary)
-        )
-        clusters.setdefault(key, []).append(incident)
-    representatives = [group[0] for group in clusters.values()]
-    related = {group[0].id: group[1:] for group in clusters.values()}
-    logger.info(
-        "step clusters",
-        extra={
-            "io": "output",
-            "clusters": {rep: [i.id for i in rest] for rep, rest in related.items() if rest},
-            "representatives": len(representatives),
-        },
-    )
-    return representatives, related
 
 
 def _no_match(validation: list[CandidateValidation]) -> AssistResponse:
@@ -172,21 +150,26 @@ def _incident_record(incident: Incident) -> dict[str, object]:
 
 
 def _relevant_incident(
-    candidate: CandidateAssessment, title: str, related: Sequence[Incident]
+    candidate: CandidateAssessment,
+    by_id: dict[str, Incident],
+    related: Sequence[CandidateAssessment],
 ) -> RelevantIncident:
     return RelevantIncident(
         rank=candidate.rank,
         id=candidate.id,
-        title=title,
+        title=by_id[candidate.id].title,
         reason=candidate.reason,
         rank_justification=candidate.rank_justification,
-        related=[
-            RelatedIncident(
-                id=r.id,
-                environment=r.environment,
-                severity=r.severity,
-                created_at=r.created_at,
-            )
-            for r in related
-        ],
+        related=[_related_incident(r, by_id[r.id]) for r in related],
+    )
+
+
+def _related_incident(candidate: CandidateAssessment, incident: Incident) -> RelatedIncident:
+    return RelatedIncident(
+        id=incident.id,
+        title=incident.title,
+        reason=candidate.reason,
+        environment=incident.environment,
+        severity=incident.severity,
+        created_at=incident.created_at,
     )

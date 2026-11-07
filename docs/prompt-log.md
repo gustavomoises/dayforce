@@ -126,3 +126,12 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   when you write the code because of the time you will need to rly in other agents, tell teh agenst to be samert and concise and find elagant and simple solutions taht are afective, following the best practive and design pattern. make the code pristine
   ```
 - Result: always-included steering file `.kiro/steering/code-standards.md` (spec as source of truth, layers, style, patterns, definition of done), repeated in each sub-agent's instructions.
+
+**#11 Related incidents decided by the LLM**
+- Tool: Kiro (chat)
+- Goal: stop showing the same problem several times in `/assist`, without relying on identical text.
+- Prompt:
+  ```
+  groups don't have to have the same title, they should be related if the llm says incidents are related; use the most relevant as first one and say these are related incidents of this relevant ticket
+  ```
+- Result: `incident-assist` v3 adds `related_to` per candidate. The lead of each group is ranked; the others point to it and are returned under `related` with their reason. Text-hash clustering removed; guardrails check `related_to` names a ranked candidate.

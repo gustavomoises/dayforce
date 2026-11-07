@@ -11,16 +11,18 @@ from app.services.assist.models.validation import CandidateValidation
 
 
 class RelatedIncident(BaseModel):
-    """Another valid candidate recording the same failure (identical text)."""
+    """A relevant incident the LLM grouped under a ranked one, with why it is related."""
 
     id: str
+    title: str
+    reason: str
     environment: Environment
     severity: Severity
     created_at: datetime
 
 
 class RelevantIncident(BaseModel):
-    """A relevant candidate, in rank order, with the title and its cluster of recurrences."""
+    """A ranked relevant incident, in rank order, with the incidents related to it."""
 
     rank: int
     id: str

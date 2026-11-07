@@ -19,9 +19,10 @@
                 "relevant": { "type": "boolean" },
                 "reason": { "type": "string" },
                 "rank": { "type": ["integer", "null"] },
-                "rank_justification": { "type": ["string", "null"] }
+                "rank_justification": { "type": ["string", "null"] },
+                "related_to": { "type": ["string", "null"] }
               },
-              "required": ["id", "relevant", "reason", "rank", "rank_justification"],
+              "required": ["id", "relevant", "reason", "rank", "rank_justification", "related_to"],
               "additionalProperties": false
             }
           },

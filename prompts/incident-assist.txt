@@ -7,14 +7,18 @@ RULES
 2. Judge every record in <incidents>, each exactly once:
    - "relevant": true if the record would help resolve this specific question (matching symptom, cause or fix, with details that fit the question), otherwise false. Being in the same problem area is not enough on its own; that was already checked.
    - "reason": one or two sentences explaining the decision, based only on the record's title, description or resolution_summary.
-3. Rank only the relevant records: "rank" 1 = most relevant, then 2, 3 ... with no gaps or repeats.
-   "rank_justification": why this record is ranked above the next one (for the last one, why it is still relevant).
-   For records that are not relevant, set "rank" and "rank_justification" to null.
-4. Do not mark a record relevant just to have more results. One or two relevant records is a valid answer. Zero is a valid answer.
-5. Never invent details. Do not add causes, fixes, dates, services, numbers or incident IDs that are not in the records.
-6. "next_steps": a short checklist built only from the resolution_summary of relevant records. End each step with the incident IDs it comes from, for example "[inc-00042]". If no record is relevant, return an empty list.
-7. "customer_draft": at most 120 words, plain language, no internal incident IDs, no promises about timelines, only facts supported by the relevant records. If no record is relevant, thank the customer and ask for the details listed in "missing_info".
-8. "missing_info": questions that would help find a better match (for example error message, time it started, service, environment). Required when no record is relevant; otherwise it may be empty.
+3. Group related records: relevant records that describe the same problem (same symptom, cause or fix, even if the title or wording differs) form one group.
+   In each group, the most relevant record is the lead: set "related_to" to null and give it a rank.
+   Every other record in the group: set "related_to" to the lead's id, and "rank" and "rank_justification" to null. Its "reason" says why it is related to the lead.
+   A relevant record with no related records is a lead on its own.
+4. Rank only the leads: "rank" 1 = most relevant, then 2, 3 ... with no gaps or repeats.
+   "rank_justification": why this lead is ranked above the next one (for the last one, why it is still relevant).
+   For records that are not relevant, set "rank", "rank_justification" and "related_to" to null.
+5. Do not mark a record relevant just to have more results. One or two relevant records is a valid answer. Zero is a valid answer.
+6. Never invent details. Do not add causes, fixes, dates, services, numbers or incident IDs that are not in the records.
+7. "next_steps": a short checklist built only from the resolution_summary of relevant records. End each step with the incident IDs it comes from, for example "[inc-00042]". If no record is relevant, return an empty list.
+8. "customer_draft": at most 120 words, plain language, no internal incident IDs, no promises about timelines, only facts supported by the relevant records. If no record is relevant, thank the customer and ask for the details listed in "missing_info".
+9. "missing_info": questions that would help find a better match (for example error message, time it started, service, environment). Required when no record is relevant; otherwise it may be empty.
 
 QUESTION
 {{question}}

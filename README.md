@@ -4,7 +4,29 @@ Search and an AI assistant for incident triage. FastAPI on AWS EC2, PostgreSQL w
 
 - **Live API:** http://18.222.137.172:8000 (OpenAPI docs at [/docs](http://18.222.137.172:8000/docs)). No auth during the review period.
 - **Dataset:** 800 synthetic incidents from a committed catalog and a fixed seed.
-- **Docs:** [architecture.md](architecture.md), [database-architecture.md](database-architecture.md), [trace-architecture.md](trace-architecture.md), [prompts/](prompts/README.md), spec in [.kiro/specs/incident-triage-api/](.kiro/specs/incident-triage-api/requirements.md). AI documentation: [PROMPTS.md](PROMPTS.md), [AI-NOTES.md](AI-NOTES.md), [TRADEOFFS.md](TRADEOFFS.md).
+- **Docs:** the architecture is defined in three files, each with Mermaid diagrams. See [Documentation](#documentation) for what each one covers.
+
+## Documentation
+
+| File | Defines | Read it for |
+|------|---------|-------------|
+| [architecture.md](architecture.md) | Layers, dependency injection, components, the `/assist` pipeline (validation, grouping, guardrails), errors, prompts and LLM config | How the code is organized and how `/assist` decides what to return |
+| [database-architecture.md](database-architecture.md) | Tables (ER diagram), indexes, hybrid search and RRF, embeddings, normalization, content hash, ingest rules, seed | How `/search`, `/ingest` and the seed work and why results are reproducible |
+| [trace-architecture.md](trace-architecture.md) | Correlation ID flow, Langfuse traces and observations, logging, `/debug/trace` | How to follow one request end to end, including token usage and cost |
+| [prompts/](prompts/README.md) | The three Langfuse prompts and their configs (model, JSON schema) | What each LLM call is told and returns |
+| [.kiro/specs/incident-triage-api/](.kiro/specs/incident-triage-api/requirements.md) | Requirements, design (with correctness properties) and the task list | The spec the code was built from |
+| [TRADEOFFS.md](TRADEOFFS.md) | What is done, not done, deviations from the take-home, risks, next steps | Why some results differ from the take-home wording |
+| [PROMPTS.md](PROMPTS.md), [AI-NOTES.md](AI-NOTES.md) | AI prompts used during the build, AI mistakes and how they were fixed | How AI tools were steered |
+
+```mermaid
+flowchart LR
+    R["README.md<br/>start here"] --> A["architecture.md<br/>layers, /assist, errors"]
+    R --> D["database-architecture.md<br/>tables, search, ingest, seed"]
+    R --> T["trace-architecture.md<br/>correlation ID, Langfuse, logs"]
+    A --> P["prompts/<br/>LLM prompts and configs"]
+    A --> S[".kiro/specs/<br/>requirements, design, tasks"]
+    R --> X["TRADEOFFS.md, PROMPTS.md, AI-NOTES.md"]
+```
 
 ```mermaid
 flowchart LR

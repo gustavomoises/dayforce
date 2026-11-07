@@ -95,14 +95,14 @@
       "name": "Assist",
       "request": {
         "method": "POST",
-        "description": "Grounded, ranked suggestions for a support question: relevant incidents (up to 5 groups), every candidate's verdict, next steps, a customer draft and missing info. Filters and candidate_multiplier (1-5) are optional; remove the ones you do not need. Can take up to ~100 s. Expect 200 with status answered or no_relevant_incidents; 422 for an empty question. Copy the response X-Correlation-ID into correlation_id to fetch its trace.",
+        "description": "Grounded, ranked suggestions for a support question: relevant incidents (up to 5 groups), every candidate's verdict, next steps, a customer draft and missing info. Only question is required. Optional fields: environment (dev, qa, stage, prod), service, severity (critical, high, medium, low), tags (all must match) and candidate_multiplier (1-5, default 3); each filter narrows the search, so combining several can leave no matches. Can take up to ~100 s. Expect 200 with status answered or no_relevant_incidents; 422 for an empty question. Copy the response X-Correlation-ID into correlation_id to fetch its trace.",
         "header": [
           { "key": "X-Correlation-ID", "value": "{{$guid}}" },
           { "key": "Content-Type", "value": "application/json" }
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"question\": \"database connection timeouts in payments\",\n  \"environment\": \"prod\",\n  \"service\": \"payments-api\",\n  \"severity\": \"high\",\n  \"tags\": [\"database\"],\n  \"candidate_multiplier\": 3\n}",
+          "raw": "{\n  \"question\": \"database connection timeouts in payments\"\n}",
           "options": { "raw": { "language": "json" } }
         },
         "url": {

@@ -36,6 +36,9 @@ class Settings(BaseModel):
 
     ingest_max_items: int = 500
     seed: int = 42
+    seed_repeats: int = 2
+    seed_min_incidents: int = 200
+    seed_max_incidents: int = 999
     catalog_path: str = "data/service_catalog.json"
 
     @classmethod

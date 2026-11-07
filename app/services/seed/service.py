@@ -13,13 +13,9 @@ from app.core.settings import Settings
 from app.services.ingest.models import IncidentIn, IngestResult
 from app.services.ingest.service import IngestService
 from app.services.schema.service import SchemaService
-from app.services.seed.generator import generate_incidents
+from app.services.seed.generator import MAX_REPEATS, generate_incidents
 
 logger = logging.getLogger(__name__)
-
-# The take-home asks for 200-500 incidents; the seed uses every catalog event once.
-MIN_EVENTS = 200
-MAX_EVENTS = 500
 
 
 def ivfflat_lists(embedded_rows: int, settings: Settings) -> int:
@@ -72,17 +68,25 @@ class SeedService:
             catalog = Catalog.model_validate_json(path.read_text(encoding="utf-8"))
         except ValidationError as exc:
             raise InvalidInput(f"catalog {path} is invalid: {exc.error_count()} errors") from None
-        total = catalog.total_events()
-        if not MIN_EVENTS <= total <= MAX_EVENTS:
-            raise InvalidInput(
-                f"catalog has {total} events; need {MIN_EVENTS}-{MAX_EVENTS}. "
-                "Re-run `cli catalog` with more services or events"
-            )
+        self._check_size(catalog.total_events())
         return catalog
+
+    def _check_size(self, events: int) -> None:
+        """Incidents = catalog events x SEED_REPEATS, kept below 1,000 (one IVFFlat list)."""
+        settings = self._settings
+        if not 1 <= settings.seed_repeats <= MAX_REPEATS:
+            raise InvalidInput(f"SEED_REPEATS must be 1-{MAX_REPEATS}")
+        total = events * settings.seed_repeats
+        if not settings.seed_min_incidents <= total <= settings.seed_max_incidents:
+            raise InvalidInput(
+                f"seed would create {total} incidents ({events} events x "
+                f"{settings.seed_repeats} repeats); need {settings.seed_min_incidents}-"
+                f"{settings.seed_max_incidents}. Change SEED_REPEATS or re-run `cli catalog`"
+            )
 
     def _generate(self, catalog: Catalog) -> list[IncidentIn]:
         try:
-            return generate_incidents(catalog, self._settings.seed)
+            return generate_incidents(catalog, self._settings.seed, self._settings.seed_repeats)
         except ValidationError as exc:
             raise InvalidInput(
                 f"catalog events break ingest limits: {exc.error_count()} errors"

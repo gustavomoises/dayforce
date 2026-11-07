@@ -99,8 +99,9 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 1. WHEN `cli seed` is run, THE Seed_Service SHALL, without asking for confirmation, drop exactly the six Incident_Tables, call the Schema_Service, fill the Type_Tables from fixed lists, generate incidents from the Catalog and pass them to the Ingest_Service.
 2. THE Seed_Service SHALL never drop `query_embeddings`, the `vector` extension, the schema or any other table.
 3. THE Seed_Service SHALL generate incidents with a private `random.Random(SEED)`, services in alphabetical order, IDs in that order, `created_at` uniform between 2026-01-01 and 2026-10-31 UTC, environment weights dev 15 / qa 15 / stage 20 / prod 50 and severity weights critical 10 / high 25 / medium 40 / low 25.
+3a. THE Seed_Service SHALL turn each catalog event into `SEED_REPEATS` incidents (default 2), each with a different (environment, severity) pair and its own `created_at`, so no copy is a content-hash duplicate.
 4. WHEN `cli seed` is run twice with the same Catalog and `SEED`, THE Seed_Service SHALL produce identical incidents.
-5. IF the Catalog holds fewer than 200 or more than 500 events, THEN THE Seed_Service SHALL stop with a message explaining how to regenerate the Catalog.
+5. IF catalog events × `SEED_REPEATS` is below 200 or above 999, or `SEED_REPEATS` is outside 1-16, THEN THE Seed_Service SHALL stop with a message explaining what to change.
 6. WHEN the seed has ingested and embedded the incidents, THE Seed_Service SHALL create an IVFFlat index on `incidents.embedding` with `vector_cosine_ops`, with `lists` = embedded rows / 1000, at least 1 and at most `IVFFLAT_MAX_LISTS` (10), and then run `ANALYZE incidents`.
 7. THE Seed_Service SHALL build the IVFFlat index only after the rows exist, because IVFFlat learns its lists from the data present at creation.
 
@@ -253,3 +254,4 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 2. THE `TRADEOFFS.md` SHALL explain that seeding is a CLI command and that `POST /ingest` upserts a body or retries pending embeddings.
 3. THE `TRADEOFFS.md` SHALL explain that search depends on OpenAI for query embeddings and returns 503 when it is unavailable.
 4. THE `TRADEOFFS.md` SHALL explain that the endpoints are public without authentication for the review period.
+5. THE `TRADEOFFS.md` SHALL explain that the seed creates 800 incidents (400 catalog events × 2 repeats), above the take-home's 500, to model recurring failures; `SEED_REPEATS=1` gives 400.

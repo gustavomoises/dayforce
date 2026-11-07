@@ -53,6 +53,8 @@ flowchart LR
     - After ingest and embeddings: `lists = clamp(embedded_rows / IVFFLAT_ROWS_PER_LIST, 1, IVFFLAT_MAX_LISTS)`, `CREATE INDEX ... USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)`, then `ANALYZE incidents`
     - Built last because IVFFlat learns its lists from the rows present when it is created
     - _Requirements: 6.6, 6.7_
+  - [x] 2.10 Repeat each catalog event `SEED_REPEATS` times (default 2) with distinct (environment, severity) pairs and own dates; size check 200-999
+    - _Requirements: 6.3a, 6.5, 17.5_
   - [x] 2.9 Use the index in the vector branch with probes
     - Vector branch reads `incidents` directly (not the shared CTE) and orders by `embedding <=> query` with `LIMIT`, so the planner can use the index; similarity and threshold applied on that result
     - Each search transaction sets `ivfflat.probes = IVFFLAT_PROBES` with `set_config(..., true)`; probes ≥ lists, so results are exact and reproducible

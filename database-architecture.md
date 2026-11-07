@@ -298,11 +298,13 @@ The database FKs are a second safety net. The service check gives a clear per-in
 | Random source | `random.Random(SEED)`, `SEED` env var, default `42`; never the global `random` | Take-home requires a fixed seed and repeatable results. A private generator is not affected by other code using `random`. |
 | Order | services sorted alphabetically, events in catalog order | Same input order + same seed = same output. Dict or file order can't change the result. |
 | IDs | `inc-00001` upward, in that order | Stable IDs, so `/incidents/{id}` examples in the README and tests always point to the same incident. |
-| Events | each catalog event used once (default 400) | Inside the take-home range (200-500) and no near-duplicates, which would fail the content-hash check. |
+| Repeats | each catalog event becomes `SEED_REPEATS` incidents (default 2: 400 events → 800 incidents), copies next to each other | Real failures recur. Search and `/assist` see the same problem across environments, severities and dates. |
+| Combinations | each copy draws a different (environment, severity) pair, weighted by both weights, without replacement (16 pairs, so at most 16 repeats); `created_at` drawn per copy | Copies never share a content hash, so none is rejected as a duplicate. |
+| Size limit | incidents = events × repeats, must be 200-999 (`SEED_MIN_INCIDENTS`, `SEED_MAX_INCIDENTS`) | At least the take-home minimum; below 1,000 so the IVFFlat index stays at one list (exact search). Above 500 is a documented take-home deviation. |
 | `created_at` | uniform between 2026-01-01 00:00 and 2026-10-31 23:59 UTC, minute precision | Fixed bounds, not "now minus N days", so a seed run today and next week gives identical rows. Ten months gives realistic spread for date ordering. |
 | `environment` | dev 15%, qa 15%, stage 20%, prod 50% | Incident trackers are dominated by production issues; lower environments still appear so the `environment` filter has something to find in every value. |
 | `severity` | critical 10%, high 25%, medium 40%, low 25% | Real incident mix: critical outages are rare, most tickets are medium. Every value still has dozens of rows (~40 critical at 400), so severity filters return results. |
-| Choice method | `rng.choices(values, weights)` per incident, environment first, then severity, then `created_at` | Fixed draw order keeps results identical; changing the order would reshuffle everything. |
+| Choice method | per event: `repeats` weighted draws of a pair (without replacement), then per copy a `created_at` | Fixed draw order keeps results identical; changing the order would reshuffle everything. |
 
 A unit test runs the seed twice and compares the output, and checks each value of environment and severity appears at least once.
 

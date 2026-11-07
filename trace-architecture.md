@@ -150,12 +150,14 @@ Each step of the take-home list is an observation or an event, so Langfuse and `
 ```mermaid
 flowchart LR
     REQ["GET /debug/trace/id"] --> TID["trace_id = create_trace_id(seed = correlation_id)"]
-    TID --> API["api.observations.get_many<br/>fields core, basic, io, metadata, limit 1000"]
+    TID --> API["api.observations.get_many<br/>fields core, basic, io, metadata, model, usage, metrics<br/>limit 1000"]
     API --> E{"result"}
     E -- "observations found" --> OK["200: correlation_id, trace_id,<br/>langfuse_url, observations unchanged"]
     E -- "none yet" --> NR["404 trace_not_ready, retry shortly"]
     E -- "API or network error" --> UN["503 langfuse_unavailable"]
 ```
+
+Each generation and embedding observation carries its model, token usage (`usageDetails`), cost (`inputCost`, `outputCost`, `totalCost`, `costDetails`) and `latency`, so the cost of every step (each validation batch, the assist call, the query embedding) is in the response. Langfuse computes the cost from the usage and the model's price; a model without a price in Langfuse (Project Settings → Models) shows usage but no cost.
 
 The trace id is rebuilt from the correlation_id, so the API keeps nothing in memory and works with any number of workers and across restarts. Observations are returned as Langfuse returns them; each has its parent id, so the tree is in the data. Without a project id the URL falls back to `{LANGFUSE_HOST}/trace/{trace_id}`, which Langfuse redirects.
 

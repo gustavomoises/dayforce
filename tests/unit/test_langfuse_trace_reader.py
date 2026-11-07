@@ -73,7 +73,7 @@ def test_observations_are_requested_by_the_derived_trace_id() -> None:
 
     [call] = langfuse.api.observations.calls
     assert call["trace_id"] == TRACE_ID
-    assert {"io", "metadata"} <= set(call["fields"].split(","))
+    assert {"io", "metadata", "model", "usage", "metrics"} <= set(call["fields"].split(","))
 
 
 def test_observations_are_returned_as_langfuse_sends_them() -> None:

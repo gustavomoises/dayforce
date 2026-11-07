@@ -9,8 +9,9 @@ from app.core.models.trace import TraceView
 from app.core.settings import Settings
 from app.support.langfuse.client import UNREACHABLE
 
-# metadata carries the step log fields (q, filters, hits, top_ids, selected_ids).
-_FIELDS = "core,basic,io,metadata"
+# metadata carries the step log fields (q, filters, hits, top_ids, selected_ids); model, usage
+# and metrics carry the model, token counts, cost (inputCost, outputCost, totalCost) and latency.
+_FIELDS = "core,basic,io,metadata,model,usage,metrics"
 _PAGE_LIMIT = 1000  # the API maximum; one request covers any trace this app produces
 
 

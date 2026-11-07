@@ -150,7 +150,8 @@ flowchart LR
   - [x] 7.6 Routes and container: 422/404 responses, `dependency_overrides` fakes, same wiring for API and CLI
     - _Requirements: 3.4, 3.5, 14.1_
   - [x] 7.7 Property tests (Hypothesis) for design Properties 1, 2, 3, 9, 10, 11
-    - Full suite: 342 passed, 1 strict xfail (a batch repeating one id is not idempotent, Property 3; owner decision pending)
+    - Full suite: 343 passed
+    - Decision: a repeated `id` in one batch applies in order and the last version wins (requirement 7.9a, Property 3); a re-run leaves the data and embeddings unchanged
     - Found and fixed: 500 responses lost the correlation_id (handler runs outside `CorrelationMiddleware`)
     - _Requirements: 7.5, 7.7, 7.9, 4.5, 12.5, 12.7_
 

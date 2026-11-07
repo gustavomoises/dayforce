@@ -172,3 +172,22 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   yes   (to the proposal: valid only for the same failure type; a shared product area or generic word is not enough; the verdict must agree with the reason)
   ```
 - Result: `incident-validation` v4 text. Rule 2 requires the same failure type (plus the product area when the question names one), rule 3 rejects area-only or word-only matches, rule 5 forces the verdict to agree with the reason. Config unchanged.
+
+**#16 Full unit suite with parallel agents**
+- Tool: Kiro (chat, three sub-agents in parallel)
+- Goal: finish task 7 quickly without the agents editing the same files.
+- Prompt:
+  ```
+  finsih all the unit tests in 7 use up 3 agents in parallel please
+  ```
+- Result: one agent per stream (core + database, Langfuse + OpenAI, services + routes + properties), each owning its own test files; 343 tests. The agents reported bugs as strict xfail instead of fixing app code. One real bug fixed: 500 responses lost the correlation_id.
+
+**#17 Repeated id in one ingest batch**
+- Tool: Kiro (chat)
+- Goal: decide what a batch that repeats an id means for idempotence.
+- Prompt:
+  ```
+  why can't we have it on is insert other is update? or both updates?
+  winner takes all. do what is best and inform the decission
+  ```
+- Result: last version wins. Items apply in order and the id is written once. A re-run leaves rows and embeddings unchanged (no OpenAI call) but may count the repeated items as `updated`. Rejected: refusing repeated ids (stricter, but loses a valid "last write" use). Recorded in requirement 7.9a and design Property 3.

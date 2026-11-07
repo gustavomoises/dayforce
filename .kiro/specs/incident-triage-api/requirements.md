@@ -119,7 +119,8 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 6. IF an incident's `environment`, `service` or `severity` is not in its Type_Table, THEN THE Ingest_Service SHALL skip it, count it as `invalid` and list the field and value.
 7. THE Ingest_Service SHALL compute a Content_Hash over service, environment, severity, title, description, resolution summary and tags, with free text normalized, null and empty properties removed and keys sorted, excluding `id` and dates.
 8. WHEN an incident is new, THE Ingest_Service SHALL count it as `ingested`; WHEN its `id` exists with the same Content_Hash, as `skipped`; WHEN its `id` exists with a different Content_Hash, as `updated`; WHEN its Content_Hash belongs to another `id`, as `duplicates` without storing it.
-9. WHEN the same body is sent twice, THE Ingest_Service SHALL create no duplicate incidents.
+9. WHEN the same body is sent twice, THE Ingest_Service SHALL create no duplicate incidents and leave the stored data unchanged.
+9a. WHEN an `id` repeats within one batch, THE Ingest_Service SHALL apply the items in order so the last version wins, and write that `id` once.
 10. THE Ingest_Service SHALL commit the written incidents before the embedding step, so that an embedding failure never removes saved incidents.
 11. THE Triage_API SHALL respond with `ingested`, `updated`, `skipped`, `duplicates`, `invalid`, `embedded`, `embedding_pending`, `embedding_error` and `rejected`.
 

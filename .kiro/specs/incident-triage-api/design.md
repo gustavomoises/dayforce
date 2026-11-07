@@ -303,7 +303,7 @@ Strict JSON schemas generated from these models are in `prompts/*.config.json`.
 **Validates: Requirements 7.7**
 
 ### Property 3: Ingest is idempotent
-*For any* valid batch, ingesting it twice leaves the database unchanged after the first time, and the second result has every incident counted as `skipped`.
+*For any* valid batch, ingesting it twice leaves the stored incidents and embeddings unchanged after the first time. When every `id` in the batch is unique, the second result counts every incident as `skipped`. When an `id` repeats in one batch, items apply in order and the last version wins; the re-run may count those items as `updated`, but writes the same row and makes no embedding call.
 **Validates: Requirements 7.8, 7.9**
 
 ### Property 4: Invalid types are never stored

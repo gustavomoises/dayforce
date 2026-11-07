@@ -251,18 +251,15 @@ def test_property_3_ingest_is_idempotent(numbers: list[int], data: st.DataObject
     assert (second.ingested, second.updated, second.duplicates, second.invalid) == (0, 0, 0, 0)
 
 
-@pytest.mark.xfail(
-    reason="a batch repeating one id with different content is accepted, but the same body "
-    "sent again counts both items as updated and rewrites the row instead of skipping",
-    strict=True,
-)
-def test_property_3_holds_for_a_batch_that_repeats_an_id() -> None:
+def test_property_3_repeated_id_last_version_wins() -> None:
     batch = [incident_in(1, title="Pool exhausted"), incident_in(1, title="Pool drained")]
 
     after_first, after_second, second = ingest_twice(batch)
 
+    rows, _ = after_first
+    assert rows["inc-00001"].incident.title == "Pool drained"
     assert after_second == after_first
-    assert second.skipped == len(batch)
+    assert second.embedded == 0
 
 
 user_values = st.text(min_size=1, max_size=40)

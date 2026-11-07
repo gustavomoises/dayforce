@@ -4,12 +4,14 @@ Search and an AI assistant for incident triage. FastAPI on AWS EC2, PostgreSQL w
 
 - **Live API:** http://18.222.137.172:8000 (OpenAPI docs at [/docs](http://18.222.137.172:8000/docs)). No auth during the review period.
 - **Dataset:** 800 synthetic incidents from a committed catalog and a fixed seed.
+- **Assignment:** [incident-triage-take-home.md](incident-triage-take-home.md), the original take-home this project answers. [TRADEOFFS.md](TRADEOFFS.md) lists where the build differs from it, and why.
 - **Docs:** the architecture is defined in three files, each with Mermaid diagrams. See [Documentation](#documentation) for what each one covers.
 
 ## Documentation
 
 | File | Defines | Read it for |
 |------|---------|-------------|
+| [incident-triage-take-home.md](incident-triage-take-home.md) | The original assignment: endpoints, grounding rules, observability, tests and required docs | What was asked; [TRADEOFFS.md](TRADEOFFS.md) maps the deviations |
 | [architecture.md](architecture.md) | Layers, dependency injection, components, the `/assist` pipeline (validation, grouping, guardrails), errors, prompts and LLM config | How the code is organized and how `/assist` decides what to return |
 | [database-architecture.md](database-architecture.md) | Tables (ER diagram), indexes, hybrid search and RRF, embeddings, normalization, content hash, ingest rules, seed | How `/search`, `/ingest` and the seed work and why results are reproducible |
 | [trace-architecture.md](trace-architecture.md) | Correlation ID flow, Langfuse traces and observations, logging, `/debug/trace` | How to follow one request end to end, including token usage and cost |
@@ -33,7 +35,7 @@ The project was built from a Kiro spec: requirements first, then a design, then 
 
 ```mermaid
 flowchart LR
-    TH["take-home"] --> REQ["requirements.md"]
+    TH["incident-triage-take-home.md"] --> REQ["requirements.md"]
     REQ --> DES["design.md"]
     DES --> TSK["tasks.md"]
     TSK --> AG["parallel agents<br/>per stream"]

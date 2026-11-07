@@ -107,20 +107,26 @@ flowchart LR
 - [ ] 6. End-to-end run on EC2 (checkpoint: structure works)
   - [x] 6.1 Deploy to EC2, install dependencies, start uvicorn (owner)
     - _Requirements: 1.1, 1.2_
-  - [ ] 6.2 Run `cli catalog`, commit `data/service_catalog.json`, run `cli seed`
-    - [x] `cli catalog` (400 events) and `cli seed` (800 ingested and embedded, lists = 1) on EC2
-    - [ ] Copy `data/service_catalog.json` from EC2 and commit it (without it the dataset is not repeatable)
+  - [x] 6.2 Run `cli catalog` (400 events) and `cli seed` (800 ingested and embedded, lists = 1) on EC2
     - _Requirements: 5.1, 6.1_
-  - [ ] 6.3 Call each endpoint with curl; check counts, search results, assist answer, and the trace and log events in Langfuse
-    - [x] `/health`, `/search`, `/assist` (validation), `/debug/trace`
-    - [ ] `/assist` after 5.8 and 5.9 (groups, `group_reason`, grounding)
-    - [ ] `/incidents/{id}` and an unknown id (404)
-    - [ ] `/catalog`
-    - [ ] `/ingest` twice (second run all skipped) and with an empty body (embeds pending only)
-    - [ ] One failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
-    - _Requirements: 7.11, 10.1, 12.7, 13.2, 13.7, 14.4_
-  - [ ] 6.4 Fix issues found; repeat until all endpoints work
-    - [ ] Open: `incident-validation` judges strictly in the first batch and loosely in later ones (passed "concerns payment failures"); tighten the prompt
+  - [ ] 6.3 Copy `data/service_catalog.json` from EC2 and commit it
+    - Without it the dataset is not repeatable
+    - _Requirements: 5.1, 6.1_
+  - [x] 6.4 Check `/health`, `/search`, `/assist` (validation) and `/debug/trace` with curl, plus the trace and log events in Langfuse
+    - _Requirements: 10.1, 12.7, 13.2, 13.7_
+  - [ ] 6.5 Check `/assist` after 5.8 and 5.9 (groups, `group_reason`, grounding)
+    - _Requirements: 12.1d, 12.5_
+  - [ ] 6.6 Check `/incidents/{id}` and an unknown id (404)
+    - _Requirements: 11.1, 11.2_
+  - [ ] 6.7 Check `/catalog`
+    - _Requirements: 5.5_
+  - [ ] 6.8 Check `/ingest` twice (second run all skipped) and with an empty body (embeds pending only)
+    - _Requirements: 7.11, 8.5_
+  - [ ] 6.9 Check one failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
+    - _Requirements: 14.4_
+  - [ ] 6.10 Tighten `incident-validation`: it judges strictly in the first batch and loosely in later ones (passed "concerns payment failures")
+    - _Requirements: 12.1a_
+  - [ ] 6.11 Fix issues found; repeat until all endpoints work
 
 - [ ] 7. Unit tests (start after task 6 passes)
   - [ ] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)
@@ -176,15 +182,17 @@ flowchart LR
     { "id": 5, "tasks": ["2.3", "2.4", "2.5"] },
     { "id": 6, "tasks": ["2.6", "2.9"] },
     { "id": 7, "tasks": ["2.7", "5.1", "5.2"] },
-    { "id": 8, "tasks": ["2.8", "5.3"] },
-    { "id": 9, "tasks": ["5.4"] },
-    { "id": 10, "tasks": ["5.5", "5.6"] },
-    { "id": 11, "tasks": ["6.1"] },
+    { "id": 8, "tasks": ["2.8", "2.10", "5.3"] },
+    { "id": 9, "tasks": ["5.4", "5.7"] },
+    { "id": 10, "tasks": ["5.5", "5.6", "5.8"] },
+    { "id": 11, "tasks": ["5.9", "6.1"] },
     { "id": 12, "tasks": ["6.2"] },
-    { "id": 13, "tasks": ["6.3"] },
-    { "id": 14, "tasks": ["6.4"] },
-    { "id": 15, "tasks": ["7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7", "8.1", "8.2"] },
-    { "id": 16, "tasks": ["8.3", "8.4"] }
+    { "id": 13, "tasks": ["6.3", "6.4"] },
+    { "id": 14, "tasks": ["6.5", "6.6", "6.7", "6.8", "6.9", "6.10"] },
+    { "id": 15, "tasks": ["6.11"] },
+    { "id": 16, "tasks": ["7.0"] },
+    { "id": 17, "tasks": ["7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7", "8.1", "8.2", "8.5", "8.6"] },
+    { "id": 18, "tasks": ["8.3", "8.4"] }
   ]
 }
 ```

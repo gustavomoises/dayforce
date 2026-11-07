@@ -1,0 +1,33 @@
+{
+  "model": "gpt-6.1-terra",
+  "reasoning": { "effort": "medium" },
+  "max_output_tokens": 12000,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "name": "catalog_batch",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "resolution_summary": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["title", "description", "resolution_summary", "tags"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["events"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

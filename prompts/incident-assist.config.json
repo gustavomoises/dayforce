@@ -1,0 +1,37 @@
+{
+  "model": "gpt-6.1-terra",
+  "reasoning": { "effort": "medium" },
+  "max_output_tokens": 6000,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "name": "assist_answer",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "relevant": { "type": "boolean" },
+                "reason": { "type": "string" },
+                "rank": { "type": ["integer", "null"] },
+                "rank_justification": { "type": ["string", "null"] }
+              },
+              "required": ["id", "relevant", "reason", "rank", "rank_justification"],
+              "additionalProperties": false
+            }
+          },
+          "next_steps": { "type": "array", "items": { "type": "string" } },
+          "customer_draft": { "type": "string" },
+          "missing_info": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["candidates", "next_steps", "customer_draft", "missing_info"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -1,0 +1,128 @@
+# Prompt log (source for PROMPTS.md and AI-NOTES.md)
+
+Prompts given to AI tools while building, copied as written. Pick the best 5-10 for `PROMPTS.md` at the end. Corrections ("what changed") feed the AI-NOTES "AI was wrong" examples.
+
+App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse and copied to `prompts/`; they are not logged here.
+
+---
+
+**#1 Layered architecture**
+- Tool: Kiro (chat)
+- Goal: define the project architecture before writing code.
+- Prompt:
+  ```
+  project architecture: Create a md called architectre.md; each endpoint of fastAPi is hollow that call a service, I want a service layer (business layer) and support layer (langfuse, opeai, datbase). Each model is in a older inside each service, Just add be wise to where you add the moldel, never add model in a lower service that is use in a upservce. chaeck my architecture with incident-trige-take-home. create memrmaid daigrams to ilustrate. you also need to do unit tests for each component, service,...reade the icinident traigem and check if the architectureproposes is good and whoud you suggest to improve.
+  ```
+- Result: `architecture.md` with layers, structure, Mermaid diagrams, test plan, take-home check.
+- Kept: thin routes, service and support layers, test per component.
+- Changed: first draft was too long ("I asked for a md not a PhD thesis"); AI added a `core` layer so shared models (`Incident`, `SearchFilters`) don't force a lower layer to import from a higher one.
+
+**#2 Seed vs ingest order**
+- Tool: Kiro (chat)
+- Goal: clarify who populates the database.
+- Prompt:
+  ```
+  you are worng we will poulate first with the see service and aply the ingest service it is the opposite, ignets service is aservice that will be used toa dd later
+  ```
+- Result: SeedService generates incidents and calls IngestService; IngestService is the single write path, reused by `POST /ingest`.
+- Changed: AI had IngestService calling SeedService (backwards). Corrected by the user.
+
+**#3 Content hash for duplicates**
+- Tool: Kiro (chat)
+- Goal: detect duplicate incidents.
+- Prompt:
+  ```
+  I want you to add key .to incente for SHA256 encruption of whr incident. we will create a JSON object and clear the text of extra space and especial cahracters, so we can check if you are not addinf a similar incidente
+  ```
+- Follow-up:
+  ```
+  I would recommend to add the tags in alphabetical order, and remove any null property. In the database service we will ned to add a defenseive check: enviroment must be in types, like service and severity. if not we will need to skip and count that and the service reply
+  ```
+- Result: normalized canonical JSON + SHA-256 `content_hash` (unique), defensive type check with `invalid` count.
+- Changed: AI pointed out SHA-256 is a hash, not encryption. User added alphabetical tags, null removal and the defensive check.
+
+**#4 Embedding model (AI wrong, then right)**
+- Tool: Kiro (chat + web search)
+- Goal: choose an OpenAI embedding model.
+- Prompt:
+  ```
+  what is the best embedding that you recommend that is active in openAI and what whould be embedded
+  ```
+- Follow-ups:
+  ```
+  you are worng on of them was deprecated and theres ada-002
+  ```
+  ```
+  ia notcrazy Yes, OpenAI sent an email to developers stating that text-embedding-3-small would be deprecated, but they quickly reversed it and admitted it was a mistake.
+  ```
+- Result: `text-embedding-3-small`, labeled plain text of title, description, resolution.
+- Changed: AI first omitted `ada-002` from the comparison, then dismissed the user's deprecation memory without checking the OpenAI forum. A forum search confirmed the April 2026 mistaken email and its correction. Lesson: search before contradicting the user.
+
+**#5 Embeddings must never block saving**
+- Tool: Kiro (chat)
+- Goal: make ingest safe when OpenAI fails.
+- Prompt:
+  ```
+  not null does scare me, if open ai fail i need to be able to save the incedent and later in the next call find the missing embedding and do again idenpotnent ok
+  ```
+- Result: nullable `embedding`, save first, embed pending rows on every ingest call (also with an empty body), `FOR UPDATE SKIP LOCKED`.
+- Changed: AI's first design failed the whole ingest when OpenAI failed.
+
+**#6 Langfuse owns tracing**
+- Tool: Kiro (chat)
+- Goal: stop duplicating Langfuse.
+- Prompt:
+  ```
+  that is why I didn;t undersatnd your question Langfuse is the guardian of the tracing don;t try to do its job
+  ```
+- Result: removed the in-memory trace store and custom span tree; `traced` = Langfuse `@observe`; `/debug/trace` reads from Langfuse unchanged.
+- Changed: AI had built a parallel trace store, which also broke with several uvicorn workers.
+
+**#7 Environment as Langfuse label**
+- Tool: Kiro (chat)
+- Goal: select prompt version per environment.
+- Prompts:
+  ```
+  use the endpoint environemt if provided it defien the APP_ENV
+  ```
+  ```
+  the environemnts re clerly define in the take home
+  ```
+  ```
+  but in langfuse there is no prod it is production OK?
+  ```
+- Result: request `environment` → Langfuse label and trace environment; `prod` → `production` only at the Langfuse boundary; none → `production`.
+- Changed: AI first invented its own values, then dropped the mapping; user corrected both.
+
+**#8 Relevance with explicit true/false**
+- Tool: Kiro (chat)
+- Goal: make `/assist` selection auditable.
+- Prompts:
+  ```
+  yes. we have the input I can check after if the output, just add to schema to return provideing the relevance order, justifying it
+  ```
+  ```
+  you must had bollen relavant tru or false
+  ```
+  ```
+  we need to send 3 times for instance 15 most similar tickets and ask to select
+  ```
+- Result: every candidate judged `relevant` true/false with a reason; relevant ones ranked with `rank_justification`; `n` × 5 candidates (default 15) in one call; never padded to 3.
+
+**#9 Inject services into endpoints**
+- Tool: Kiro (chat)
+- Goal: keep routes thin and testable.
+- Prompt:
+  ```
+  can e inject the service in the endpoints ?
+  ```
+- Result: `app/container.py` builds clients and services once (lifespan, shared with CLI); `app/api/deps.py` getters; routes use `Depends`; tests use `dependency_overrides`.
+
+**#10 Code quality for parallel agents**
+- Tool: Kiro (chat)
+- Goal: keep code quality consistent across sub-agents working in parallel.
+- Prompt:
+  ```
+  when you write the code because of the time you will need to rly in other agents, tell teh agenst to be samert and concise and find elagant and simple solutions taht are afective, following the best practive and design pattern. make the code pristine
+  ```
+- Result: always-included steering file `.kiro/steering/code-standards.md` (spec as source of truth, layers, style, patterns, definition of done), repeated in each sub-agent's instructions.

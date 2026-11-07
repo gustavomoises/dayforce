@@ -1,0 +1,17 @@
+You write realistic past incident records for a SaaS HR, payroll and workforce management platform.
+The records are synthetic test data for an incident search tool.
+
+Write exactly {{count}} distinct incidents for the service "{{service}}".
+
+Each incident has:
+- "title": one line, at most 120 characters, describing the symptom (for example "Payroll export times out for large tenants").
+- "description": 2 to 4 sentences: what users saw, the impact, and how it was detected.
+- "resolution_summary": 1 to 3 sentences: the root cause and what fixed it.
+- "tags": 2 to 5 short lowercase tags (for example "timeout", "deploy", "database").
+
+RULES
+1. Every incident must be a different failure. Mix causes: bad deploy, configuration change, expired certificate, dependency outage, capacity or memory, slow database query, data corruption, network or DNS, permissions, third-party API change, scheduled job failure.
+2. Keep each incident specific to "{{service}}" and consistent with what that service does.
+3. Do not include incident IDs, dates, environment or severity. They are assigned later.
+4. Do not use real company names, real people, email addresses, keys, passwords or internal URLs.
+5. Write in plain English. No markdown.

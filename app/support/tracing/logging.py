@@ -22,6 +22,8 @@ _STANDARD_ATTRS = frozenset(vars(logging.makeLogRecord({}))) | {
 _MAX_METADATA_CHARS = 200  # Langfuse metadata limit per value
 _EVENT_LEVELS = {logging.ERROR: "ERROR", logging.WARNING: "WARNING", logging.INFO: "DEFAULT"}
 _forwarding: ContextVar[bool] = ContextVar("langfuse_log_forwarding", default=False)
+# Library request logs duplicate what Langfuse already records; keep only their warnings.
+_QUIET_LOGGERS = ("httpx", "httpx2", "httpcore", "httpcore2", "botocore", "urllib3", "openai")
 
 
 def configure_logging(level: int | str, langfuse: Langfuse | None = None) -> None:
@@ -37,6 +39,8 @@ def configure_logging(level: int | str, langfuse: Langfuse | None = None) -> Non
     for handler in handlers:
         handler.addFilter(TraceContextFilter())
     logging.basicConfig(level=level, handlers=handlers, force=True)
+    for name in _QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def current_observation_id() -> str | None:

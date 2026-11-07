@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from pydantic import BaseModel

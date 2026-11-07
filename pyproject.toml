@@ -1,26 +1,20 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "dayforce-task"
+name = "incident-triage-api"
 version = "0.1.0"
-description = "Dayforce job test task"
+description = "Incident triage API: hybrid search and grounded LLM assistance"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "requests>=2.34",
-    "python-dotenv>=1.2",
-    "pandas>=3.1",
-    "openpyxl>=3.1",
-]
-
-[project.optional-dependencies]
-dev = ["pytest>=9"]
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]
+markers = ["live: calls the running API (needs API_BASE_URL)"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

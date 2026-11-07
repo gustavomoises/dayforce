@@ -6,6 +6,8 @@
 | `incident-validation` | v4 | valid only for the same failure type; a shared product area or generic word is not enough; the verdict must agree with the reason |
 | `incident-catalog` | v2 | as in Langfuse |
 
+How each prompt changed and why: [PROMPT-EVOLUTION.md](../PROMPT-EVOLUTION.md).
+
 The app reads prompts from Langfuse, not from these files. These files are the source copy to paste into Langfuse and to review in git.
 
 | Langfuse prompt | Type | Text | Config |

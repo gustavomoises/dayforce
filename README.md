@@ -14,9 +14,37 @@ Search and an AI assistant for incident triage. FastAPI on AWS EC2, PostgreSQL w
 | [database-architecture.md](database-architecture.md) | Tables (ER diagram), indexes, hybrid search and RRF, embeddings, normalization, content hash, ingest rules, seed | How `/search`, `/ingest` and the seed work and why results are reproducible |
 | [trace-architecture.md](trace-architecture.md) | Correlation ID flow, Langfuse traces and observations, logging, `/debug/trace` | How to follow one request end to end, including token usage and cost |
 | [prompts/](prompts/README.md) | The three Langfuse prompts and their configs (model, JSON schema) | What each LLM call is told and returns |
+| [PROMPT-EVOLUTION.md](PROMPT-EVOLUTION.md) | Every version of each prompt, what changed and why, with the run that showed the problem | Why the prompts read the way they do now |
 | [.kiro/specs/incident-triage-api/](.kiro/specs/incident-triage-api/requirements.md) | Requirements, design (with correctness properties) and the task list | The spec the code was built from |
 | [TRADEOFFS.md](TRADEOFFS.md) | What is done, not done, deviations from the take-home, risks, next steps | Why some results differ from the take-home wording |
 | [PROMPTS.md](PROMPTS.md), [AI-NOTES.md](AI-NOTES.md) | AI prompts used during the build, AI mistakes and how they were fixed | How AI tools were steered |
+
+### How it was built: spec-driven with Kiro
+
+The project was built from a Kiro spec: requirements first, then a design, then a task list. AI agents implemented the tasks, and the owner reviewed each step on the live deployment. The spec files show the process, and the reasoning behind each decision.
+
+| File | What it shows |
+|------|---------------|
+| [requirements.md](.kiro/specs/incident-triage-api/requirements.md) | The take-home turned into numbered, testable requirements (EARS style: "WHEN ..., THE ... SHALL ..."), including the agreed deviations |
+| [design.md](.kiro/specs/incident-triage-api/design.md) | Key decisions with reasons, component interfaces, data models, the error map and 13 correctness properties checked by tests |
+| [tasks.md](.kiro/specs/incident-triage-api/tasks.md) | The build plan: 9 tasks with their subtasks, the requirements each one covers, and a dependency graph showing which streams ran in parallel |
+| [.kiro/steering/code-standards.md](.kiro/steering/code-standards.md) | The coding rules every agent followed: layers, style, patterns, definition of done |
+| [docs/prompt-log.md](docs/prompt-log.md) | Every steering prompt as typed, with what the AI produced and what was corrected |
+
+```mermaid
+flowchart LR
+    TH["take-home"] --> REQ["requirements.md"]
+    REQ --> DES["design.md"]
+    DES --> TSK["tasks.md"]
+    TSK --> AG["parallel agents<br/>per stream"]
+    STD["steering/code-standards.md"] -.-> AG
+    AG --> REV["owner review<br/>on EC2"]
+    REV -->|"correction prompt"| LOG["prompt-log.md"]
+    LOG --> REQ
+    REV -->|"works"| COM["commit"]
+```
+
+Each correction went back into the spec before it went into the code. For example, "never trust the LLM with real data" became requirement 12.5. As a result, the spec and the code describe the same system.
 
 ```mermaid
 flowchart LR

@@ -1,198 +1,196 @@
 # Trace Architecture
 
-Every API request and CLI command is one trace in Langfuse. Every service and support call inside it is a nested observation. Langfuse is the only trace store: `GET /debug/trace/{correlation_id}` reads the tree back from Langfuse.
+Every API request and CLI command is one Langfuse trace. Service and support calls inside it are nested observations, and log lines are events in the same trace. Langfuse is the only trace store: `GET /debug/trace/{correlation_id}` reads the observations back from Langfuse.
 
 ## Concepts
 
 | Term | Meaning |
 |------|---------|
-| `correlation_id` | One per request. From the `X-Correlation-ID` header or generated (UUID4). Returned in the response header and in every error body. |
-| Trace | All observations of one request. Langfuse trace id = `create_trace_id(seed=correlation_id)`, so the id can be rebuilt from the correlation_id at any time. |
-| Observation | One unit of work: `id`, `parent_observation_id`, `name`, `type` (span, generation or embedding), input/output summary, start/end time, `level` (error on failure), status message. |
-| Root observation | Created by the route wrapper after validation, named after the route (`POST /assist`). |
-| `APP_ENV` | Per request: the request's `environment` filter (`dev`/`qa`/`stage`; `prod` → `production`), or `production` if none. Used as the Langfuse prompt label and the Langfuse trace environment. |
+| `correlation_id` | One per request. Taken from `X-Correlation-ID` when it matches `[A-Za-z0-9._-]{1,64}`, otherwise a new UUID4. Returned in the response header and in every error body. |
+| Trace id | `Langfuse.create_trace_id(seed=correlation_id)`, so the id can be rebuilt from the correlation_id at any time. |
+| Root observation | One span per request or CLI command, named after the route (`POST /assist`) or the command (`cli seed`). |
+| Observation | Span, generation (LLM call) or embedding (embedding call), with input, output, timing and level. |
+| `APP_ENV` | The request's `environment` filter: `dev`, `qa`, `stage` as is, `prod` → `production`, none → `production`. The CLI uses `production`. It is the Langfuse trace environment and the prompt label. |
 
-## Components (`app/support/tracing/`, `app/support/langfuse/`)
+## Components
 
 | File | Responsibility |
 |------|----------------|
-| `correlation.py` | FastAPI middleware: read or create `correlation_id`, set response header, add it to error bodies. |
-| `endpoint.py` | `traced_endpoint` route wrapper: after validation, resolves `APP_ENV`, opens the root observation with `propagate_attributes(environment=APP_ENV, ...)`, calls the service, flushes spans to Langfuse after the response. Same helper used by `cli.py` (with `production`). |
-| `span.py` | `traced` = Langfuse's own `@observe` decorator, re-exported so services don't import Langfuse directly. No logic of ours: Langfuse captures input, output, errors, timing and nesting. |
-| `context.py` | `contextvars` holding `correlation_id` (for logs). Works across `async` and FastAPI's threadpool. |
-| `logging.py` | Logging filter that adds `correlation_id` and the current observation id to every log line; JSON formatter for stdout; `LangfuseLogHandler` that forwards each log record to Langfuse as an event under the current observation (see Logging). |
-| `langfuse/trace_reader.py` | `TraceReader.get(correlation_id)`: rebuilds the trace id and returns Langfuse's observations as Langfuse returns them, plus the trace URL. Used by `/debug/trace`. |
+| `support/tracing/correlation.py` | `CorrelationMiddleware` (pure ASGI): resolves the correlation_id, sets the contextvar, stores it in `scope["state"]`, adds `X-Correlation-ID` to the response. |
+| `support/tracing/context.py` | `correlation_scope` and `get_correlation_id`, backed by a contextvar that survives the threadpool. |
+| `support/tracing/endpoint.py` | `root_observation`: trace id from the correlation_id, `propagate_attributes(environment, trace_name, metadata.correlation_id)`, root span; marks the root `ERROR` on an exception. `schedule_flush` adds `langfuse.flush` as a background task. |
+| `api/tracing.py` | `run_traced`: resolves `APP_ENV`, opens the root, passes `APP_ENV` to the service as the prompt label, records a small output summary, schedules the flush. |
+| `support/tracing/span.py` | `traced` = Langfuse's own `@observe`, re-exported so services never import Langfuse. |
+| `support/tracing/logging.py` | `TraceContextFilter` (adds `correlation_id` and `observation_id`), `JsonFormatter` (stdout), `LangfuseLogHandler` (events). |
+| `support/langfuse/trace_reader.py` | `LangfuseTraceReader.get(correlation_id)`: observations of the trace, unchanged, plus the trace URL. |
+| `support/llm/openai_client.py`, `openai_embedder.py` | open the `openai.responses` generation and the `openai.embeddings` embedding observations. |
 
-**Principle: Langfuse is the owner of tracing.** The app does not store, build, merge or reshape traces. It only (1) sets the trace id, environment and correlation_id on the root, (2) marks functions with Langfuse's decorator, and (3) asks Langfuse for a trace by id.
-
-Services only use `@traced`. They never import Langfuse or touch ids.
+Langfuse owns tracing. The app only sets the trace id, environment and correlation_id on the root, marks functions with `@observe`, and asks Langfuse for a trace by id. It does not store, build or reshape traces.
 
 ```mermaid
 flowchart LR
-    MW[correlation middleware] --> CTX[(contextvars)]
-    EP[traced_endpoint] --> LF[(Langfuse Cloud US)]
-    DEC["@traced"] --> LF
-    LOG[logging filter] --> CTX
-    DBG[GET /debug/trace/id] --> TR[TraceReader] --> LF
+    MW["CorrelationMiddleware"] --> CTX[("contextvar correlation_id")]
+    RT["run_traced + root_observation"] --> LF[("Langfuse Cloud US")]
+    DEC["@traced = @observe"] --> LF
+    GEN["OpenAIClient, OpenAIEmbedder"] --> LF
+    LOG["LangfuseLogHandler"] --> LF
+    CTX --> RT
+    CTX --> LOG
+    DBG["GET /debug/trace/id"] --> TR["LangfuseTraceReader"] --> LF
 ```
 
-## Request lifecycle
+## correlation_id flow
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant M as Middleware
-    participant R as Route (traced_endpoint)
-    participant S as Service (@traced)
+    participant SE as ServerErrorMiddleware
+    participant M as CorrelationMiddleware
+    participant EX as ExceptionMiddleware
+    participant R as Route with run_traced
     participant L as Langfuse
-    C->>M: request (X-Correlation-ID optional)
-    M->>M: correlation_id
-    M->>R: request
-    R->>R: validate; APP_ENV = filters.environment (prod → production) or "production"
-    R->>L: root observation (trace_id from correlation_id) + propagate_attributes(environment=APP_ENV, correlation_id)
-    R->>S: call service
-    S->>L: child observation (parent = current, same environment)
-    S-->>R: result or error
-    R->>L: close root (input, output, status)
-    R-->>M: response
-    M-->>C: response + X-Correlation-ID
-    R->>L: flush (background task, after the response is sent)
+    C->>SE: request, X-Correlation-ID optional
+    SE->>M: request
+    M->>M: reuse a valid header value or create a UUID4
+    M->>M: set contextvar and scope state correlation_id
+    M->>EX: request
+    EX->>R: call route
+    R->>L: root span, trace id from correlation_id, environment APP_ENV
+    alt success
+        R-->>EX: result, flush scheduled as background task
+        EX-->>M: 200
+        M-->>C: response + X-Correlation-ID
+    else AppError or validation error
+        R-->>EX: exception, root marked ERROR
+        EX->>EX: handler reads correlation_id from the contextvar
+        EX-->>M: error body with correlation_id
+        M-->>C: response + X-Correlation-ID
+    else unexpected exception
+        R--xSE: exception passes through EX and M
+        SE->>SE: 500 handler reads request.state.correlation_id
+        SE-->>C: 500 internal_error, X-Correlation-ID set by the handler
+    end
 ```
 
-The flush runs as a FastAPI background task after the response, so it does not add latency and spans reach Langfuse within seconds.
+Starlette runs the catch-all `Exception` handler in `ServerErrorMiddleware`, outside every user middleware, where the contextvar is already reset. The middleware therefore also stores the id in `scope["state"]`, and the 500 handler reads it from `request.state`, logs inside a `correlation_scope` and sets the header itself. This keeps the correlation_id on every error, including the unexpected ones.
 
-## What each endpoint produces
+## Observation tree for one `/assist` request
 
 ```mermaid
 flowchart TD
-    A["POST /assist"] --> A1[AssistService.assist]
-    A1 --> A2["SearchService.search (tool:search)"]
-    A2 --> E["OpenAIEmbedder.embed (embedding)"]
-    A2 --> A3[IncidentRepository.search]
-    A1 --> A4[IncidentService.get_many] --> A5[IncidentRepository.get_many]
-    A1 --> A6[Langfuse.get_prompt incident-assist]
-    A1 --> A7["OpenAIClient.complete (generation)"]
-    A1 --> A8["guardrails.validate (selected IDs)"]
+    ROOT["POST /assist<br/>root span, input = request body"] --> AS["AssistService.assist"]
+    AS --> VAL["validation<br/>CandidateScreener.screen"]
+    VAL --> S1["tool:search, one per batch"]
+    S1 --> E1["openai.embeddings<br/>only when the query vector is not stored yet"]
+    S1 --> L1["events: step tool:search input,<br/>step tool:search output"]
+    VAL --> P1["Langfuse.get_prompt<br/>incident-validation, one per batch"]
+    VAL --> G1["openai.responses generation<br/>ValidationAnswer, one per batch"]
+    VAL --> LV["event: step validation<br/>checked, valid_ids, target"]
+    AS --> GM["IncidentService.get_many"]
+    AS --> P2["Langfuse.get_prompt incident-assist"]
+    AS --> G2["openai.responses generation<br/>AssistAnswer, linked to the prompt version"]
+    AS --> GR["guardrails"]
+    GR --> LG["events: step grounding dropped, if any<br/>step selected_ids"]
 ```
 
-| Entry | Observations |
-|-------|--------------|
-| `POST /ingest` | IngestService.ingest → IncidentRepository.upsert_many, OpenAIEmbedder.embed_batch (embedding) |
-| `GET /search` | SearchService.search → OpenAIEmbedder.embed (embedding), IncidentRepository.search |
-| `GET /incidents/{id}` | IncidentService.get → IncidentRepository.get |
-| `GET /catalog` | CatalogService.get |
+Each step of the take-home list is an observation or an event, so Langfuse and `/debug/trace` show the search input and output, every validation verdict, the full LLM input and output, and the selected IDs. When no hit is valid, the tree stops after `validation` and `AssistService.assist` logs `step selected_ids` with an empty list.
+
+## What each entry point records
+
+| Entry | Observations under the root |
+|-------|-----------------------------|
 | `POST /assist` | tree above |
-| `cli schema / catalog` | SchemaService / CatalogService (generation per service) |
-| `cli seed` | SeedService.seed → SchemaRepository.drop_app_tables, SchemaService.create, SchemaRepository.upsert_types, IngestService.ingest → IncidentRepository.upsert_many, OpenAIEmbedder.embed_batch |
-| `/health` | root only |
-| `/debug/trace` | not traced (reading a trace should not create traces) |
+| `GET /search` | `tool:search` → `openai.embeddings` (only for a new query) |
+| `GET /incidents/{id}` | `IncidentService.get` |
+| `GET /catalog` | `CatalogService.get` |
+| `POST /ingest` | `openai.embeddings` per batch of pending rows; events `ingest finished`, `ingest embedding stopped` |
+| `GET /health` | root only |
+| `GET /debug/trace/{id}` | not traced, so reading a trace creates none |
+| `cli catalog` | `CatalogService.generate` → per service `Langfuse.get_prompt` + `openai.responses` |
+| `cli seed` | `openai.embeddings` per batch; events for the drop, schema, type tables, ingest and vector index steps |
+| `cli schema` | root with the `schema applied` event |
+| `cli schemas` | no container, no trace |
 
-## Required `/assist` steps (take-home)
+`IngestService`, `SeedService` and `SchemaService` have no `@traced` span of their own; their work shows as events and embedding observations under the root.
 
-Recorded as observation input/output, so they appear in Langfuse and in `/debug/trace`:
+## Required `/assist` step records
 
-- `tool:search` input: query, filters, `candidate_multiplier`
-- `tool:search` output: hit count, top IDs
-- `guardrails.validate` output: selected incident IDs
+| Record | Fields |
+|--------|--------|
+| `step tool:search input` (event input) | `q`, `filters`, `limit`, `offset` |
+| `step tool:search output` (event output) | `hits` (real total), `top_ids` |
+| `step validation` (event output) | `checked`, `valid_ids`, `target` |
+| `step grounding dropped` (warning) | `unknown_ids`, `dropped_steps` |
+| `step selected_ids` (event output) | `selected_ids` (group leads), `groups`, `relevant_count` |
+
+`candidate_multiplier` is on the root observation input (the request body); `target` = n × 5 is on `step validation`.
+
+## Logging
+
+```json
+{"ts":"2026-11-07T14:02:00.123Z","level":"INFO","logger":"app.services.search.service","correlation_id":"abc","observation_id":"9f2e...","msg":"step tool:search output","io":"output","hits":12,"top_ids":["inc-00042","inc-00107"]}
+```
+
+| Destination | Why | Format |
+|-------------|-----|--------|
+| stdout (journald on EC2) | take-home "correlation_id in every log line"; works when Langfuse is down | one JSON object per line: `ts`, `level`, `logger`, `correlation_id`, `observation_id`, `msg`, extra fields, `exc` for exceptions |
+| Langfuse | the log sits in the trace next to the observation that wrote it | event under the current observation |
+
+`LangfuseLogHandler` rules:
+- Only `INFO` and above, and only while an observation is active. Startup and shutdown logs go to stdout only.
+- Event name = the message. Level: `ERROR` → `ERROR`, `WARNING` → `WARNING`, `INFO` → `DEFAULT`.
+- The `extra={...}` fields go in the event input, or in the event output when the record has `extra={"io": "output"}`.
+- Event metadata holds `correlation_id` and `logger`, each cut to 200 characters (Langfuse metadata limit).
+- A send failure is suppressed; the stdout line is already written and the request continues. A guard stops SDK log records from looping back into the handler.
+- `httpx`, `httpcore`, `botocore`, `urllib3` and `openai` loggers are set to `WARNING`, because Langfuse already records those calls.
 
 ## `GET /debug/trace/{correlation_id}`
 
-1. `trace_id = create_trace_id(seed=correlation_id)`.
-2. `langfuse.api.observations.get_many(trace_id=trace_id, fields="core,basic,io")`.
-3. Return them unchanged (each has its `parent_observation_id`, so the tree is in the data) with a link to the trace in the Langfuse UI.
-
-```json
-{
-  "correlation_id": "abc",
-  "trace_id": "4f1c...",
-  "langfuse_url": "https://us.cloud.langfuse.com/project/<project>/traces/4f1c...",
-  "observations": [ "...as returned by Langfuse..." ]
-}
+```mermaid
+flowchart LR
+    REQ["GET /debug/trace/id"] --> TID["trace_id = create_trace_id(seed = correlation_id)"]
+    TID --> API["api.observations.get_many<br/>fields core, basic, io, metadata, limit 1000"]
+    API --> E{"result"}
+    E -- "observations found" --> OK["200: correlation_id, trace_id,<br/>langfuse_url, observations unchanged"]
+    E -- "none yet" --> NR["404 trace_not_ready, retry shortly"]
+    E -- "API or network error" --> UN["503 langfuse_unavailable"]
 ```
 
-| Case | Response |
-|------|----------|
-| Trace found | 200 with the tree |
-| No observations yet | 404 "trace not available yet; Langfuse can take a few seconds, retry shortly" |
-| Langfuse unreachable | 503 "Langfuse unreachable, check keys / network" |
-
-Works with any number of uvicorn workers and survives restarts, because nothing is kept in app memory.
+The trace id is rebuilt from the correlation_id, so the API keeps nothing in memory and works with any number of workers and across restarts. Observations are returned as Langfuse returns them; each has its parent id, so the tree is in the data. Without a project id the URL falls back to `{LANGFUSE_HOST}/trace/{trace_id}`, which Langfuse redirects.
 
 ## Langfuse SDK calls (Python SDK v5, OpenTelemetry)
 
 | Need | Call |
 |------|------|
-| Client | host `https://us.cloud.langfuse.com` (`LANGFUSE_HOST`), keys from Secrets Manager |
-| Trace id | `langfuse.create_trace_id(seed=correlation_id)` |
-| Root observation | `start_as_current_observation(as_type="span", name=route, trace_context={"trace_id": ...})` |
-| Environment and correlation_id on every observation | `propagate_attributes(environment=APP_ENV, trace_name=route, metadata={"correlation_id": ...})` on the root; children inherit |
-| Child observation | `@observe(name=..., as_type=...)` (re-exported as `traced`) |
-| LLM call | `as_type="generation"`, `model=...`, `prompt=<prompt client>` |
-| Embedding call | `as_type="embedding"`, `model=...`, input count and token usage (not the vectors) |
-| Input/output | `observation.update(input=..., output=...)` |
+| Client | `Langfuse(public_key, secret_key, base_url=LANGFUSE_HOST)`, keys from Secrets Manager, built in the container |
+| Trace id | `Langfuse.create_trace_id(seed=correlation_id)` |
+| Root | `propagate_attributes(environment=APP_ENV, trace_name=name, metadata={"correlation_id": ...})` + `start_as_current_observation(as_type="span", name=name, trace_context={"trace_id": ...})` |
+| Nested span | `@observe(name=...)` re-exported as `traced` |
+| LLM call | `start_as_current_observation(as_type="generation", model=..., prompt=<prompt client>)`, then `update(output, usage_details)` |
+| Embedding call | `start_as_current_observation(as_type="embedding")`, input and output are counts, not vectors |
+| Log event | `create_event(name, level, metadata, input or output)` |
 | Prompt | `get_prompt(name, label=APP_ENV, type="text", cache_ttl_seconds=0)` |
-| Read back | `langfuse.api.observations.get_many(trace_id=..., fields=...)` |
-| Flush | `langfuse.flush()` after each response (background task) and in FastAPI shutdown |
+| Read back | `api.observations.get_many(trace_id=..., fields=..., limit=1000)` |
+| Flush | `langfuse.flush()` as a background task after each response, and in `Container.close()` |
 
 Rules:
-- Traces go out through the SDK's OTLP exporter. Never use legacy `POST /api/public/ingestion` (removed for traces on Langfuse Cloud, 2026-11-16).
-- Do not use removed or deprecated calls: `update_current_trace`, `set_current_trace_io`, `start_span`, `start_generation`, `api.trace.get`.
-- No generic OpenTelemetry auto-instrumentation (FastAPI, psycopg). The SDK's default filter drops those spans and the tree would have gaps.
-- Metadata values are strings, max 200 characters.
-- **Environment:** the request's `environment` filter is the Langfuse environment and prompt label for that request: `dev`, `qa`, `stage` as is, `prod` → `production`, no filter → `production`. It is set only once, by `traced_endpoint`, so one trace never has two environments. The mapping exists only at the Langfuse boundary; the API, search filter and database keep `prod`.
-
-## Logging (take-home requirement, sent to stdout and Langfuse)
-
-Every log line carries `correlation_id`. Each line goes to two places:
-
-| Destination | Why | Format |
-|-------------|-----|--------|
-| stdout (journald on EC2) | take-home "correlation_id in every log line"; still works when Langfuse is down | one JSON object per line |
-| Langfuse | logs sit inside the trace, next to the observation that wrote them | event observation under the current observation |
-
-```json
-{"ts":"2026-11-07T14:02:00.123Z","level":"INFO","logger":"assist","correlation_id":"abc","observation_id":"9f2e...","msg":"step tool:search output","hits":12,"top_ids":["inc-00042","inc-00107"]}
-```
-
-**Langfuse forwarding (`LangfuseLogHandler`):**
-- Only while a request or CLI command has an active observation. Logs outside one (startup, shutdown) go to stdout only.
-- One Langfuse event per record: name = the message, level mapped `ERROR`→`ERROR`, `WARNING`→`WARNING`, `INFO`→`DEFAULT`; `DEBUG` is not sent. Extra fields (`hits`, `top_ids`, ...) and `correlation_id` go in the event metadata.
-- The event inherits the trace's environment from the root, like every other observation.
-- If sending fails, the record is still on stdout; the handler never raises.
-- Same redaction as observations: no secrets, inputs truncated.
-
-**Required `/assist` step log lines** (also present as observation input/output):
-
-| Log message | Fields |
-|-------------|--------|
-| `step tool:search input` | `q`, `filters`, `candidate_multiplier` |
-| `step tool:search output` | `hits`, `top_ids` |
-| `step selected_ids` | `selected_ids`, `relevant_count` |
+- Traces go out through the SDK's OTLP exporter. The legacy `POST /api/public/ingestion` endpoint and deprecated calls (`update_current_trace`, `start_span`, `start_generation`, `api.trace.get`) are not used.
+- No generic OpenTelemetry auto-instrumentation (FastAPI, psycopg); the SDK filters those spans and the tree would have gaps.
+- The environment is set once, on the root, so one trace never has two environments. The mapping `prod` → `production` exists only at the Langfuse boundary; the API, the search filter and the database keep `prod`.
+- When a route raises, FastAPI does not run its background tasks; the SDK's batch exporter still sends the spans.
 
 ## Data rules
 
-- Log and trace summaries, not full payloads: IDs, counts, filters, lengths. Full LLM prompt and response only on the generation observation.
-- Never record secrets, connection strings or API keys.
-- Inputs truncated to a fixed length before recording.
+- Never record secrets, connection strings or API keys. Error messages name secrets and settings, never values.
+- Embedding observations record counts, not vectors or texts. The full LLM prompt and output are only on the generation observation.
+- The root output is a summary: list fields of the result are left out.
 
 ## Failures
 
 | Case | Behavior |
 |------|----------|
-| Exception in an observation | recorded by Langfuse's decorator; exception re-raised |
-| Langfuse prompt fetch fails | `/assist` returns 503 "Langfuse unreachable" |
-| Langfuse export fails | export runs after the response, so it is logged, not returned |
-| `/debug/trace` before Langfuse has the trace | 404 with "retry shortly" |
-
-## Unit tests (`tests/unit/support/tracing/`)
-
-| Test | Checks |
-|------|--------|
-| correlation | header reused; generated when missing; returned in response header |
-| environment | root and all children carry `APP_ENV`; `prod` → `production`; no filter → `production`; CLI → `production` |
-| root | root observation gets the trace id from the correlation_id, the environment and the correlation_id metadata (fake Langfuse client) |
-| context | correlation_id survives `await` and threadpool calls |
-| trace_reader | trace id rebuilt from correlation_id; observations returned unchanged with the Langfuse URL; no observations → 404 "retry"; Langfuse error → 503 |
-| flush | flush scheduled after the response, not before |
-| logging | every stdout line is JSON with `correlation_id` and observation id; inside a request each record becomes one Langfuse event with mapped level and metadata; `DEBUG` not sent; outside a request nothing sent to Langfuse; Langfuse error does not raise; `/assist` writes the three step lines |
-| redaction | secrets never appear in observation input/output |
+| Exception inside an observation | recorded by Langfuse (`@observe` or root `level=ERROR`), then re-raised to the error handler |
+| Prompt fetch fails | 503 `langfuse_unavailable` or `prompt_label_missing`; no fallback prompt |
+| Export to Langfuse fails | happens after the response, so it never changes the response |
+| Log event fails | stdout line kept, request continues |
+| `/debug/trace` before Langfuse has the trace | 404 `trace_not_ready` |

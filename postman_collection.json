@@ -1,0 +1,142 @@
+{
+  "info": {
+    "name": "Incident Triage API",
+    "description": "One request per endpoint. Set the base_url collection variable to target another deployment. Every request sends a fresh X-Correlation-ID, which the API echoes and uses as the Langfuse trace key.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://18.222.137.172:8000" },
+    { "key": "incident_id", "value": "inc-00001" },
+    { "key": "correlation_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "description": "App status and database reachability. Expect 200 with {status, database}.",
+        "header": [{ "key": "X-Correlation-ID", "value": "{{$guid}}" }],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Search incidents",
+      "request": {
+        "method": "GET",
+        "description": "Hybrid keyword and semantic search. Enable the optional filters as needed; tags is comma-separated and all must match. Expect 200 with {total, results[id, title, snippet, score]}; 422 for an invalid filter value.",
+        "header": [{ "key": "X-Correlation-ID", "value": "{{$guid}}" }],
+        "url": {
+          "raw": "{{base_url}}/search?q=database connection timeouts",
+          "host": ["{{base_url}}"],
+          "path": ["search"],
+          "query": [
+            { "key": "q", "value": "database connection timeouts" },
+            { "key": "environment", "value": "prod", "disabled": true },
+            { "key": "service", "value": "payments-api", "disabled": true },
+            { "key": "severity", "value": "high", "disabled": true },
+            { "key": "tags", "value": "database,timeout", "disabled": true },
+            { "key": "limit", "value": "10", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get incident",
+      "request": {
+        "method": "GET",
+        "description": "One full incident record by id (variable incident_id). Expect 200; 404 {error, detail, correlation_id} if the id does not exist.",
+        "header": [{ "key": "X-Correlation-ID", "value": "{{$guid}}" }],
+        "url": {
+          "raw": "{{base_url}}/incidents/{{incident_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["incidents", "{{incident_id}}"]
+        }
+      }
+    },
+    {
+      "name": "Ingest incidents",
+      "request": {
+        "method": "POST",
+        "description": "Upsert a batch of incidents, then embed pending rows. This example writes inc-90001 to the database. Expect 200 with counts (ingested, updated, skipped, duplicates, invalid, embedded, embedding_pending) and any rejected items; 422 for a malformed body. Sending the same body again returns skipped = 1.",
+        "header": [
+          { "key": "X-Correlation-ID", "value": "{{$guid}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "[\n  {\n    \"id\": \"inc-90001\",\n    \"created_at\": \"2025-01-15T10:30:00Z\",\n    \"environment\": \"prod\",\n    \"service\": \"payments-api\",\n    \"severity\": \"high\",\n    \"title\": \"Database connection timeouts during checkout\",\n    \"description\": \"Checkout requests failed with connection timeouts to the primary database after a traffic spike.\",\n    \"resolution_summary\": \"Raised the connection pool size and added a read replica for reporting queries.\",\n    \"tags\": [\"database\", \"timeout\"]\n  }\n]",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/ingest",
+          "host": ["{{base_url}}"],
+          "path": ["ingest"]
+        }
+      }
+    },
+    {
+      "name": "Ingest without body (embed pending only)",
+      "request": {
+        "method": "POST",
+        "description": "No body: stores nothing and only embeds rows still missing an embedding. Expect 200 with counts.",
+        "header": [{ "key": "X-Correlation-ID", "value": "{{$guid}}" }],
+        "url": {
+          "raw": "{{base_url}}/ingest",
+          "host": ["{{base_url}}"],
+          "path": ["ingest"]
+        }
+      }
+    },
+    {
+      "name": "Assist",
+      "request": {
+        "method": "POST",
+        "description": "Grounded, ranked suggestions for a support question: relevant incidents (up to 5 groups), every candidate's verdict, next steps, a customer draft and missing info. Filters and candidate_multiplier (1-5) are optional; remove the ones you do not need. Can take up to ~100 s. Expect 200 with status answered or no_relevant_incidents; 422 for an empty question. Copy the response X-Correlation-ID into correlation_id to fetch its trace.",
+        "header": [
+          { "key": "X-Correlation-ID", "value": "{{$guid}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"database connection timeouts in payments\",\n  \"environment\": \"prod\",\n  \"service\": \"payments-api\",\n  \"severity\": \"high\",\n  \"tags\": [\"database\"],\n  \"candidate_multiplier\": 3\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/assist",
+          "host": ["{{base_url}}"],
+          "path": ["assist"]
+        }
+      }
+    },
+    {
+      "name": "Catalog",
+      "request": {
+        "method": "GET",
+        "description": "The committed service catalog as {service: [events]}. Never calls the LLM. Expect 200.",
+        "header": [{ "key": "X-Correlation-ID", "value": "{{$guid}}" }],
+        "url": {
+          "raw": "{{base_url}}/catalog",
+          "host": ["{{base_url}}"],
+          "path": ["catalog"]
+        }
+      }
+    },
+    {
+      "name": "Debug trace",
+      "request": {
+        "method": "GET",
+        "description": "The Langfuse trace of an earlier request, by its correlation id (variable correlation_id). Expect 200 with observations; 404 trace_not_ready while Langfuse is still ingesting it (a few seconds after the request) or if no trace has that id.",
+        "header": [{ "key": "X-Correlation-ID", "value": "{{$guid}}" }],
+        "url": {
+          "raw": "{{base_url}}/debug/trace/{{correlation_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["debug", "trace", "{{correlation_id}}"]
+        }
+      }
+    }
+  ]
+}

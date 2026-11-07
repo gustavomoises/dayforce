@@ -1,411 +1,470 @@
 # Architecture
 
+Incident Triage API: FastAPI on EC2 (us-east-2), RDS PostgreSQL with pgvector, OpenAI for the LLM and embeddings, Langfuse Cloud US for prompts and tracing. Database details: [database-architecture.md](database-architecture.md). Tracing and logging: [trace-architecture.md](trace-architecture.md). Prompts: [prompts/](prompts/README.md).
+
 ## Layers
 
 | Layer | Role | May import |
 |-------|------|-----------|
-| Entry (`app/api/`, `app/cli.py`) | Thin FastAPI routes and CLI commands. Validate input, call one service, return result. No logic. | services, core |
-| Service (`app/services/`) | Business logic: schema, catalog, seed, ingest, search, incidents, assist. Uses support only through the Protocols in `core/ports.py`. | core, other services |
-| Support (`app/support/`) | External systems: database, OpenAI, Langfuse, Secrets Manager, logging/trace. Implements `core/ports.py`. | core |
-| Core (`app/core/`) | Shared domain models, settings, errors. No dependencies. | nothing |
-
-**Rule:** imports only point down. A model lives in the lowest layer that uses it. A lower layer never imports a model from a higher layer.
-Shared models (`Incident`, `SearchFilters`) go in `core`. Models used by only one service stay in that service's `models/` folder.
+| Entry (`app/api/`, `app/cli.py`) | Thin routes and CLI commands. Validate input, open the root observation, call one service. No business logic. | services, support, core |
+| Service (`app/services/`) | Business logic: schema, catalog, seed, ingest, search, incidents, assist. | other services, core, and `traced` from support |
+| Support (`app/support/`) | External systems: PostgreSQL, OpenAI, Langfuse, Secrets Manager, logging glue. Implements `core/ports.py`. | core |
+| Core (`app/core/`) | Shared models, Protocols, settings, errors, pure functions. | nothing |
 
 ```mermaid
 flowchart TD
-    API[API routes / CLI] --> SVC[Services]
-    SVC --> SUP[Support]
-    API --> CORE[Core models, settings, errors]
-    SVC --> CORE
-    SUP --> CORE
+    subgraph ENTRY ["Entry: app/api, app/cli.py"]
+      API["routes, deps.py, run_traced"]
+      CLI["cli.py"]
+    end
+    subgraph SERVICES ["Services: app/services"]
+      SVC["AssistService, CandidateScreener, SearchService,<br/>IncidentService, IngestService, SeedService,<br/>SchemaService, CatalogService"]
+    end
+    subgraph SUPPORT ["Support: app/support"]
+      SUP["database, llm, langfuse, secrets, tracing"]
+    end
+    subgraph CORE ["Core: app/core"]
+      PORTS["ports.py Protocols"]
+      MODELS["models, settings, errors,<br/>normalize, fingerprint, app_env"]
+    end
+    CONT["app/container.py<br/>composition root"]
+    ENTRY --> SERVICES
+    SERVICES --> PORTS
+    SUPPORT -. implements .-> PORTS
+    ENTRY --> MODELS
+    SERVICES --> MODELS
+    SUPPORT --> MODELS
+    CONT --> SUPPORT
+    CONT --> SERVICES
+    ENTRY --> CONT
 ```
+
+Imports only point down, so a lower layer never depends on a higher one. Services reach support only through the Protocols in `core/ports.py`; the one direct import is `traced`, the Langfuse `@observe` decorator re-exported by `support/tracing/span.py`. `app/container.py` is the only place that builds clients and wires real implementations into services.
+
+A model lives in the lowest layer that uses it. Shared models (`Incident`, `SearchFilters`, `SearchQuery`, `CompiledPrompt`, `LLMResult`, `TraceView`, storage rows) are in `app/core/models/`. Models used by one service stay in that service's `models` module.
 
 ## Structure
 
 ```
-main.py                         # create_app(), lifespan builds the container
+main.py                       create_app(): CorrelationMiddleware, error handlers, routers; lifespan builds the container
 app/
-  container.py                  # build_container(settings): support clients + services (used by main.py and cli.py)
-  cli.py                        # python -m app.cli schema | catalog | seed | schemas
+  container.py                build_container(settings) -> Container (used by main.py and cli.py)
+  cli.py                      python -m app.cli schema | catalog | seed | schemas
   core/
-    models/incident.py          # Incident, Environment, Severity
-    models/filters.py           # SearchFilters (used by search, assist, database)
-    models/prompt.py            # LLMConfig, CompiledPrompt, LLMResult (Langfuse <-> OpenAI)
-    ports.py                    # Protocols: PromptProvider, LLMClient, EmbeddingClient, repositories, TraceReader
-    normalize.py                # lowercase/trim codes and tags, tags alphabetical
-    fingerprint.py              # normalized JSON + SHA-256 content hash (see database-architecture.md)
-    embedding_text.py           # labeled text (title, description, resolution) to embed
-    settings.py  errors.py
+    models/                   catalog, filters, incident, prompt, search, storage, trace
+    ports.py                  PromptProvider, LLMClient, EmbeddingClient, IncidentRepository,
+                              IncidentUnitOfWork, SchemaRepository, TraceReader
+    app_env.py                resolve_app_env: request environment -> Langfuse label and environment
+    normalize.py  fingerprint.py  embedding_text.py  secrets.py  settings.py  errors.py
   api/
-    deps.py                     # one Depends getter per service
+    deps.py                   one Depends getter and Annotated alias per service
+    errors.py                 exception handlers -> {error, detail, correlation_id}
+    tracing.py                run_traced: root observation around one route call
     ingest.py search.py incidents.py assist.py catalog.py debug.py health.py
   services/
-    schema/   service.py                # creates all tables and indexes (idempotent); SQL in support/database/sql/
-    catalog/  service.py  defaults.py  models/batch.py  # LLM: services x n events -> JSON {service: [events]}
-    seed/     service.py  models/seed_config.py   # reset: drop app tables, SchemaService, type tables, incidents (fixed seed), IngestService
-    ingest/   service.py  models/ingest_result.py   # reusable write path: normalize, check, hash, upsert
-    search/   service.py  models/search_result.py
+    assist/                   service.py (AssistService), screening.py (CandidateScreener),
+                              guardrails.py, models/ (request, validation, answer, response)
+    search/                   service.py, models.py (SearchResult)
     incidents/service.py
-    assist/   service.py  guardrails.py  models/answer.py
+    ingest/                   service.py, plan.py (pure classify), models.py (IncidentIn, IngestResult)
+    seed/                     service.py, generator.py (fixed-seed incidents)
+    schema/service.py
+    catalog/                  service.py, defaults.py, models/ (CatalogRequest, CatalogBatch)
   support/
-    database/  pool.py  query_builder.py  incident_repository.py  schema_repository.py
-    llm/       openai_client.py  openai_embedder.py   # LLMClient + EmbeddingClient protocols
-    langfuse/  client.py  prompts.py  trace_reader.py   # PromptProvider (prompt + config), read trace by id
-    tracing/   span.py  endpoint.py  context.py  correlation.py  logging.py   # thin glue to Langfuse, see trace-architecture.md
-    secrets/   secrets_manager.py
-data/service_catalog.json       # output of the catalog service (LLM), committed
-tests/unit/  (mirrors app/)   tests/live/
+    database/                 pool.py, errors.py, incident_repository.py, unit_of_work.py,
+                              query_builder.py, schema_repository.py, sql/001-005
+    llm/                      openai_client.py, openai_embedder.py, errors.py, schemas.py
+    langfuse/                 client.py, prompts.py, trace_reader.py
+    tracing/                  correlation.py, context.py, endpoint.py, span.py, logging.py
+    secrets/secrets_manager.py
+prompts/                      incident-validation, incident-assist, incident-catalog (.txt + .config.json)
+data/service_catalog.json     catalog generated once by the LLM, committed
+tests/unit/                   one file per component     tests/live/   calls the running API
 ```
 
-## Dependency injection (services injected into endpoints)
-
-Services are built once at startup and injected into routes with FastAPI `Depends`. Routes never construct a service or a client.
+## Dependency injection
 
 ```mermaid
 flowchart LR
-    LS[main.py lifespan] --> BC["build_container(settings)"]
-    BC --> SUP[support clients<br/>db pool, OpenAI, Langfuse]
-    BC --> SVC[services<br/>wired with support via core/ports]
-    SVC --> ST[(app.state.container)]
-    ST --> DEP["api/deps.py<br/>get_search_service(), ..."]
-    DEP --> RT["route(service = Depends(get_search_service))"]
-    CLI[cli.py] --> BC
+    LS["main.py lifespan"] --> BC["build_container(settings)"]
+    CLI["cli.py"] --> BC
+    BC --> SEC["load_secrets: Secrets Manager"]
+    BC --> SUP["one DB pool, one OpenAI client,<br/>one Langfuse client"]
+    BC --> SVC["services, wired through core/ports"]
+    SVC --> ST[("app.state.container")]
+    ST --> DEP["api/deps.py getters,<br/>for example AssistServiceDep"]
+    DEP --> RT["route parameter service: AssistServiceDep"]
 ```
+
+The container builds every client and service once, and the API and the CLI call the same `build_container`, so both are wired identically. Routes receive services through `Depends` aliases in `api/deps.py` and never read `app.state` or build a client. Tests replace a getter with `app.dependency_overrides`, so route tests need no database, OpenAI or Langfuse.
 
 ```python
 # app/api/deps.py
-def get_search_service(request: Request) -> SearchService:
-    return request.app.state.container.search
+AssistServiceDep = Annotated[AssistService, Depends(get_assist_service)]
 
-# app/api/search.py
-@router.get("/search")
-def search(params: SearchParams = Depends(), service: SearchService = Depends(get_search_service)):
-    return service.search(params.to_filters(), params.q, params.limit)
+
+# app/api/assist.py
+@router.post("/assist", response_model=AssistResponse)
+def assist(
+    request: AssistRequest,
+    background_tasks: BackgroundTasks,
+    service: AssistServiceDep,
+    langfuse: LangfuseDep,
+) -> AssistResponse:
+    return run_traced(
+        langfuse,
+        background_tasks,
+        "POST /assist",
+        lambda app_env: service.assist(request, label=app_env),
+        environment=request.environment,
+        input=request.model_dump(mode="json"),
+    )
 ```
 
-- `app/container.py` holds `build_container(settings) -> Container`: reads secrets, creates the support clients (one DB pool, one OpenAI client, one Langfuse client), then the services with those clients passed in through `core/ports` Protocols. `main.py` calls it in the FastAPI lifespan and closes the clients on shutdown; `cli.py` calls the same function, so API and CLI are wired identically.
-- One getter per service in `app/api/deps.py`. Routes depend on the getter, not on `app.state`.
-- Services are stateless and shared across requests; per-request state (DB connection, correlation_id) comes from the pool and the request context.
-- Tests replace a service with `app.dependency_overrides[get_search_service] = lambda: FakeSearchService()`, so route tests need no database, OpenAI or Langfuse.
+- Routes are sync `def`; the DB pool, OpenAI and Langfuse clients are sync. Nothing is created at import time.
+- Services are stateless and shared across requests. Per-request state (connection, correlation_id) comes from the pool and a contextvar.
+- `Container.close()` flushes Langfuse and closes the pool and the OpenAI client on shutdown.
 
-## Secrets (AWS Secrets Manager, us-east-2, read at startup by `support/secrets/secrets_manager.py`)
+## Secrets
+
+Read once at startup by `support/secrets/secrets_manager.py` from AWS Secrets Manager in `AWS_REGION` (default `us-east-2`), using the EC2 instance role.
 
 | Secret | JSON keys | Used by |
 |--------|-----------|---------|
-| `incident-triage/db-credentials` | `host`, `port`, `dbname`, `username`, `password` | database pool (`sslmode=require`) |
+| `incident-triage/db-credentials` | `host`, `port`, `dbname`, `username`, `password` | DB pool (`sslmode=require`) |
 | `incident-triage/openai-api-key` | `OPENAI_API_KEY` | OpenAI LLM and embedding clients |
 | `incident-triage/langfuse-public-key` | `LANGFUSE_PUBLIC_KEY` | Langfuse client |
 | `incident-triage/langfuse-secret-key` | `LANGFUSE_SECRET_KEY` | Langfuse client |
 
-Exact keys only, no guessing. A missing key stops startup with a message naming the secret and the expected key, never the value. A missing key stops startup with "secret `incident-triage/db-credentials` is missing key `dbname`" (names only, never values).
+A problem stops startup with a `ConfigurationError` that names the secret and the key, never a value: "secret incident-triage/db-credentials is missing key dbname", or "secret ... is not readable (ClientError); check AWS_REGION and that the instance role allows secretsmanager:GetSecretValue on it". The CLI prints the same message and exits with code 1.
 
-## Database setup flow
-
-```mermaid
-flowchart LR
-    CLI1[cli schema] --> SCH[SchemaService] --> SR[(SchemaRepository)] --> PG[(PostgreSQL)]
-    CLI3[cli catalog] --> CAT[CatalogService] --> LLM[OpenAI + Langfuse prompt] 
-    CAT --> C[data/service_catalog.json]
-    CLI2[cli seed] --> SEED[SeedService] --> C
-    SEED --> IS[IngestService]
-    R1[POST /ingest<br/>new incidents later] --> IS
-    IS --> IR[(IncidentRepository)] --> PG
-```
-
-Run order: `cli seed` (drops the app tables, recreates them through SchemaService, populates). Later, new incidents arrive through `POST /ingest`. `cli schema` alone creates missing tables without touching data. (`cli catalog` was run once; its file is committed.)
-
-1. **SchemaService** creates every table and index from versioned SQL files. Idempotent (`CREATE ... IF NOT EXISTS`). Tables, content hash and ingest rules: [database-architecture.md](database-architecture.md).
-2. **CatalogService** asks the LLM, once per service, for `n` events with `title`, `description`, `resolution_summary`, `tags`. Returns a JSON string `{"<service>": [event, ...]}`, saved to `data/service_catalog.json`. Run once; the file is committed because LLM output is not repeatable.
-
-   Input (`CatalogRequest`, `app/services/catalog/models/request.py`), defaults used for anything not given:
-
-   | Field | Default | Rules |
-   |-------|---------|-------|
-   | `services` | the 20 in `defaults.py` (below) | 1-50 names; normalized like service codes (lowercase, trimmed); duplicates removed |
-   | `events_per_service` (`n`) | 20 | 1-50 |
-
-   CLI: `python -m app.cli catalog` (all defaults), or `--services payments-api,auth-service --events 10`.
-
-   Default services: `api-gateway`, `auth-service`, `user-service`, `payroll-service`, `timesheet-service`, `benefits-service`, `payments-api`, `billing-service`, `checkout-service`, `order-service`, `inventory-service`, `shipping-service`, `notification-service`, `email-service`, `search-service`, `reporting-service`, `data-pipeline`, `message-queue`, `file-storage`, `web-frontend`.
-
-   Default output: 20 × 20 = 400 events. The seed uses every event once, so the catalog total must be 200-500 (take-home range); otherwise `cli seed` stops with "catalog has 120 events; need 200-500. Re-run `cli catalog` with more services or events".
-3. **SeedService** (`cli seed`, CLI only, no endpoint, no confirmation) drops the six app tables, calls SchemaService to recreate them, fills the type tables, then combines each catalog event with `environment`, `severity` and `created_at`, chosen with a fixed seed, into 200-500 incidents. Each event becomes `SEED_REPEATS` incidents (default 2, so 400 events → 800 incidents), each copy with a different environment and severity and its own date. It hands them to IngestService. Same catalog + same seed + same repeats = same data, so every seed run produces the identical database.
-4. **IngestService** is the single write path for incidents, used by the seed now and by `POST /ingest` later. It normalizes, runs the defensive check, hashes and upserts `incidents`, `tags` and `incident_tags`, then embeds all pending rows. Returns ingested / updated / skipped / duplicates / invalid / embedded / embedding_pending counts.
-
-## Component diagram
+## Components
 
 ```mermaid
 flowchart LR
-    subgraph API
-      R1[POST /ingest] & R2[GET /search] & R3[GET /incidents/id] & R4[POST /assist] & R5[GET /debug/trace/id] & R6[GET /catalog]
-    end
-    subgraph CLI
-      C1[cli schema] & C2[cli seed] & C3[cli catalog]
+    subgraph Entry
+      R1["POST /ingest"] & R2["GET /search"] & R3["GET /incidents/id"] & R4["POST /assist"] & R5["GET /catalog"] & R6["GET /debug/trace/id"] & R7["GET /health"]
+      C1["cli schema"] & C2["cli catalog"] & C3["cli seed"]
     end
     subgraph Services
       SCH[SchemaService]
+      CAT[CatalogService]
       SEED[SeedService]
-      CS[CatalogService]
-      IS[IngestService]
+      ING[IngestService]
       SS[SearchService]
-      ICS[IncidentService]
-      AS[AssistService] --> G[guardrails]
+      INC[IncidentService]
+      AS[AssistService]
+      CS[CandidateScreener]
+      GR[guardrails]
     end
     subgraph Support
-      DB[(IncidentRepository<br/>SchemaRepository<br/>Postgres)]
-      LLM[OpenAIClient]
+      DB[("PostgresIncidentRepository<br/>PostgresSchemaRepository")]
       EMB[OpenAIEmbedder]
-      LF[Langfuse<br/>prompts + tracing owner]
-      SM[SecretsManager]
+      LLM[OpenAIClient]
+      PR[LangfusePromptProvider]
+      TR[LangfuseTraceReader]
     end
-    C1-->SCH-->DB
-    C2-->SEED-->IS
-    C3-->CS-->LLM
-    R1-->IS-->DB
-    IS-->EMB
-    R2-->SS-->DB
-    SS-->EMB
-    R3-->ICS-->DB
-    R4-->AS-->SS
-    AS-->ICS
-    AS-->LLM
-    AS-->LF
-    R5-->LF
-    R6-->CS-->CF[data/service_catalog.json]
+    C1 --> SCH --> DB
+    C2 --> CAT --> PR
+    CAT --> LLM
+    C3 --> SEED --> SCH
+    SEED --> ING
+    R1 --> ING --> DB
+    ING --> EMB
+    R2 --> SS --> DB
+    SS --> EMB
+    R3 --> INC --> DB
+    R4 --> AS --> CS --> SS
+    CS --> PR
+    CS --> LLM
+    AS --> INC
+    AS --> PR
+    AS --> LLM
+    AS --> GR
+    R5 --> CAT
+    R6 --> TR
+    R7 --> DB
 ```
 
-`GET /catalog` returns the committed catalog file as `{service: [events]}`. It only reads the file and never calls the LLM.
+`/search` and `/assist` share one search path because `CandidateScreener` calls `SearchService.candidates`, which runs the same code as `SearchService.search` (take-home requirement). `GET /catalog` reads the committed file and never calls the LLM. `GET /health` pings the database.
 
-`AssistService` calls `SearchService`, so `/search` and `/assist` share one search path (take-home requirement). That path is hybrid: full-text plus `text-embedding-3-small` vectors, merged by reciprocal rank fusion ([database-architecture.md](database-architecture.md#search-hybrid-one-code-path-for-search-and-assist)).
+## Database setup
 
-## Tracing (every endpoint, nested)
+```mermaid
+flowchart LR
+    CC["cli catalog, run once"] --> CAT[CatalogService] --> F["data/service_catalog.json"]
+    CS["cli seed"] --> SEED[SeedService]
+    SEED -->|"reads, checks size"| F
+    SEED -->|"drops 6 incident tables"| PG[("PostgreSQL")]
+    SEED --> SCH[SchemaService] -->|"DDL files"| PG
+    SEED -->|"type tables"| PG
+    SEED --> ING[IngestService]
+    API["POST /ingest"] --> ING
+    ING -->|"step 1: write, commit<br/>step 2: embed pending"| PG
+    SEED -->|"last: IVFFlat index"| PG
+```
 
-Langfuse owns tracing. Every request and CLI command is one Langfuse trace keyed by `correlation_id`; every service and support call is a nested observation through Langfuse's `@observe` (re-exported as `traced`). The app keeps no trace store: `GET /debug/trace/{correlation_id}` asks Langfuse. Log lines (with `correlation_id`) go to stdout as JSON and to Langfuse as events inside the trace. Details: [trace-architecture.md](trace-architecture.md).
+`cli catalog` asks the LLM once per service (default 20 services × 20 events = 400 events) and the file is committed, because LLM output is not repeatable. `cli seed` turns each event into `SEED_REPEATS` (2) incidents with a fixed seed, so every run builds the same 800 incidents. `POST /ingest` uses the same `IngestService` later. Details: [database-architecture.md](database-architecture.md).
 
-## /assist flow
+## /assist
+
+`POST /assist` takes `question` (1-2000 characters), the `/search` filters and `candidate_multiplier` n (1-5, default 3). The target is n × `ASSIST_MAX_RESULTS` (5), so 15 valid candidates by default.
 
 ```mermaid
 sequenceDiagram
     participant C as Client
+    participant R as Route
     participant A as AssistService
+    participant V as CandidateScreener
     participant S as SearchService
-    participant P as Langfuse
+    participant DB as IncidentRepository
+    participant P as PromptProvider
     participant L as LLMClient
-    C->>A: question + filters (correlation_id)
-    A->>S: search(q, filters) — observation tool:search (input / output: hits, top IDs) in Langfuse
-    alt no hits
-      A-->>C: "nothing relevant, please add details"
-    else hits
-      A->>A: IncidentService.get_many(top IDs) for full records
-      A->>P: get prompt "incident-assist"
-      alt Langfuse unreachable
-        P-->>C: 503 "Langfuse unreachable, check keys / network"
-      end
-      A->>L: prompt with retrieved records only
-      L-->>A: JSON answer
-      Note over A,P: the LLM call is a Langfuse generation observation
-      A->>A: guardrails (observation, output: selected IDs): every retrieved ID judged relevant true/false; relevant ones ranked; top 5, never padded
-      A-->>C: IDs + reasons, next steps, draft
+    participant I as IncidentService
+    participant G as guardrails
+    C->>R: POST /assist question, filters, candidate_multiplier
+    R->>R: validate body, APP_ENV from environment, open root observation
+    R->>A: assist(request, label = APP_ENV)
+    A->>V: screen(question, filters, target = n x 5, label)
+    loop each batch, at most VALIDATION_MAX_BATCHES = 4
+        V->>S: candidates(filters, question, size, offset)
+        S->>DB: search, hybrid full-text + vector, RRF
+        DB-->>S: page of hits + total
+        S-->>V: hits, logged as tool:search
+        V->>P: get incident-validation
+        P-->>V: compiled prompt + config
+        V->>L: complete(prompt, ValidationAnswer)
+        L-->>V: valid true or false + reason per hit
+        V->>V: ground_verdicts, keep valid hits in search order
     end
+    V-->>A: valid hits + every verdict
+    alt no valid hits
+        A-->>R: no_relevant_incidents, missing_info, validation
+    else valid hits
+        A->>I: get_many(valid ids)
+        I->>DB: get_many
+        DB-->>I: full records
+        I-->>A: full records
+        A->>P: get incident-assist
+        P-->>A: compiled prompt + config
+        A->>L: complete(prompt, AssistAnswer)
+        L-->>A: relevant, reason, rank, group per candidate
+        A->>G: ground(answer, ids sent)
+        A->>G: group(answer, 5)
+        G-->>A: groups, best rank first
+        A-->>R: AssistResponse
+    end
+    R-->>C: JSON + X-Correlation-ID
 ```
 
-Failures map to clear errors with what to check: Langfuse unreachable → 503, LLM missing key → 503, LLM timeout → 504. No fallback prompt.
+The work is split into two LLM steps with different jobs. `incident-validation` is a cheap filter on title and snippet; `incident-assist` sees full records of valid hits only, so its context holds no noise. Both steps go through `SearchService`, and every LLM answer passes code checks before it reaches the response.
+
+### Step 1: validation in batches (`CandidateScreener`, `screening.py`)
+
+```mermaid
+flowchart TD
+    START["target = candidate_multiplier x ASSIST_MAX_RESULTS<br/>offset = 0"] --> SIZE["size: first batch min of 15 and target<br/>later min of 15 and needed x checked / valid"]
+    SIZE --> FETCH["SearchService.candidates: size hits from offset"]
+    FETCH --> ANY{"any hits?"}
+    ANY -- no --> S1["stop: search exhausted"]
+    ANY -- yes --> CALL["one incident-validation call<br/>offset moves past these hits"]
+    CALL --> KEEP["ground_verdicts, keep valid hits"]
+    KEEP --> T{"valid count reached target?"}
+    T -- yes --> S2["stop: target reached"]
+    T -- no --> B{"whole batch invalid?"}
+    B -- yes --> S3["stop: later hits are less similar"]
+    B -- no --> M{"VALIDATION_MAX_BATCHES = 4 calls made?"}
+    M -- yes --> S4["stop: call limit"]
+    M -- no --> SIZE
+    S1 & S2 & S3 & S4 --> OUT["first target valid hits + every verdict"]
+```
+
+Each batch holds at most `VALIDATION_BATCH_SIZE` (15) hits, most similar first, and the next batch starts at the offset already checked. Its size follows the valid rate seen so far, so a low rate fetches a full batch instead of wasting the call limit on small ones. A whole invalid batch stops the loop, because later hits rank lower still.
+
+The prompt variables are `question`, `filters` and `incidents` (id, title, snippet). A hit is valid only when it has the same failure type as the question, and the same product area or service when the question names one; a shared product area or generic word ("timeout", "payment") is not enough, and the verdict must agree with its reason. `ground_verdicts` drops IDs that were not in the batch and raises `GroundingFailure` (502) when a hit is missing, repeated or has an empty reason.
+
+### Step 2: relevance, rank and group (`incident-assist`)
+
+`IncidentService.get_many` loads the full records of the valid hits, and one `incident-assist` call judges them. Per candidate the model returns `relevant`, `reason`, a global `rank` (1..k over all relevant candidates), `rank_justification`, `group` and `group_reason`; plus `next_steps`, `customer_draft` and `missing_info`. Two records share a group only when they have the same root cause and the same fix; a shared symptom is not enough.
+
+### Grounding guardrails (`guardrails.ground`)
+
+```mermaid
+flowchart TD
+    IN["AssistAnswer from the LLM"] --> DROP["drop candidates whose id was not sent<br/>log step grounding dropped"]
+    DROP --> COV{"every sent id exactly once?"}
+    COV -- no --> F502["502 grounding_failure"]
+    COV -- yes --> CON{"each candidate consistent?<br/>non-empty reason<br/>relevant: rank, rank_justification, group, group_reason set<br/>not relevant: all four null"}
+    CON -- no --> F502
+    CON -- yes --> RK{"ranks unique?"}
+    RK -- no --> F502
+    RK -- yes --> REN["renumber ranks 1..k and groups 1..g<br/>in order of first appearance"]
+    REN --> STEPS["remove next steps that cite no incident<br/>or any id that is not relevant"]
+    STEPS --> MI{"nothing relevant and missing_info empty?"}
+    MI -- yes --> F502
+    MI -- no --> GRP["guardrails.group: relevant by group,<br/>best-ranked group first, members by rank"]
+    GRP --> TOP["first 5 groups, never padded"]
+    TOP --> RESP["response entries: title, environment, severity,<br/>created_at from the database"]
+```
+
+The rule is to never trust the LLM with real data. Wrong IDs and unsupported next steps are removed because the rest of the answer can still be used; a missing, repeated or half-filled assessment rejects the whole answer, because it cannot be repaired without guessing. Renumbering keeps ranks and groups gapless after drops, and every displayed fact about an incident comes from the database.
+
+### Response
+
+| Field | Content |
+|-------|---------|
+| `status` | `answered` when at least one candidate is relevant, else `no_relevant_incidents` (derived in code) |
+| `relevant_incidents` | one entry per group, at most 5, led by its best-ranked incident: `group`, `rank`, `id`, `title`, `reason`, `rank_justification`, `group_reason`, `environment`, `severity`, `created_at`, and `related` (other members: `rank`, `id`, `title`, `reason`, `group_reason`, `environment`, `severity`, `created_at`) |
+| `note` | "only 1 distinct problem found" or "only 2 distinct problems found"; otherwise null |
+| `candidates` | every grounded assessment, relevant or not |
+| `validation` | every verdict from `incident-validation` |
+| `next_steps`, `customer_draft`, `missing_info` | from the LLM, next steps filtered by the guardrails |
+| `prompt_version` | `incident-assist` version used (null when no assist call was made) |
+
+When no hit is valid, no `incident-assist` call is made: the status is `no_relevant_incidents` and `missing_info` asks for the exact error message, the start time and the affected service and environment.
+
+### Rejected alternatives
+
+| Alternative | Why not |
+|-------------|---------|
+| Always return 3-5 incidents (take-home wording) | Padding shows unrelated incidents as answers. 1 or 2 groups are returned with a note (TRADEOFFS.md). |
+| Several LLM votes per candidate | Multiplies cost and latency; one validation verdict plus the guardrails was enough. |
+| HyDE `incident-query` step (LLM writes a fake incident to embed) | One more LLM call before search, and it changes what `/search` and `/assist` search for. |
+| Text-hash clustering of results | Groups only identical text; the LLM `group` with the same-cause-and-fix rule groups reworded copies of the same problem. |
+
+## Errors
+
+```mermaid
+flowchart TD
+    LIB["library exception: psycopg, openai,<br/>langfuse, boto3"] --> MAP["support converts it to a domain error<br/>from app/core/errors.py"]
+    MAP --> UP["service lets it propagate,<br/>root observation marked ERROR"]
+    UP --> H{"exception type"}
+    H -- AppError --> B1["status from the class,<br/>body error, detail, correlation_id"]
+    H -- RequestValidationError --> B2["422 invalid_input,<br/>loc and msg per field"]
+    H -- "any other exception" --> B3["500 internal_error, detail: unexpected error, see logs<br/>correlation_id read from request.state"]
+```
+
+Every error body is `{error, detail, correlation_id}` and never contains a stack trace; the stack trace goes only to the stdout log. Support code converts library exceptions at the boundary, so services and handlers deal with domain errors only. The 500 handler runs in Starlette's `ServerErrorMiddleware`, outside `CorrelationMiddleware`, so the middleware also stores the id in `scope["state"]` and the handler sets the `X-Correlation-ID` header itself.
+
+| HTTP | `error` codes | When | Message names what to fix |
+|------|---------------|------|---------------------------|
+| 422 | `invalid_input` | bad body, query or filter; catalog file invalid | field errors |
+| 404 | `not_found`, `trace_not_ready` | unknown incident; catalog file missing; trace not in Langfuse yet | "incident inc-00999 not found"; "run `python -m app.cli catalog`"; "retry shortly" |
+| 502 | `upstream_invalid`, `llm_output_invalid`, `grounding_failure`, `embedding_invalid` | LLM output does not parse, is refused or incomplete; guardrails reject it; wrong embedding count or dimension | "LLM output does not match `AssistAnswer`: candidates.3.rank: ..." |
+| 503 | `unavailable`, `langfuse_unavailable`, `prompt_label_missing`, `prompt_config_invalid`, `llm_unavailable`, `embedding_unavailable` | database down; Langfuse unreachable or keys rejected; label missing; chat prompt or bad config or schema name mismatch; OpenAI key rejected, network, rate limit, 5xx | "check LANGFUSE_HOST and the secrets `incident-triage/langfuse-public-key` and `incident-triage/langfuse-secret-key`"; "prompt `incident-assist` has no label `qa`; add it in Langfuse"; "OpenAI rejected the API key; check secret `incident-triage/openai-api-key`" |
+| 504 | `llm_timeout` | OpenAI LLM or embedding call timed out | "OpenAI did not answer within 30 s; retry, or raise LLM_TIMEOUT_SECONDS (embeddings: EMBEDDING_TIMEOUT_SECONDS) and restart the API" |
+| 500 | `internal_error` | unexpected exception or a non-connection database error | "unexpected error; see logs" |
+
+An embedding failure inside ingest is not an HTTP error: the incidents stay saved and the 200 response reports `embedding_pending` and `embedding_error`.
 
 ## Prompts and LLM config (Langfuse owns both)
 
-Each LLM call uses one Langfuse **text** prompt (not chat) on Langfuse Cloud US, `https://us.cloud.langfuse.com` (env var `LANGFUSE_HOST`, this default). The prompt text holds the instructions; the prompt `config` holds the OpenAI settings.
+Each LLM call uses one Langfuse text prompt. The prompt text holds the instructions; the prompt `config` holds the OpenAI settings. Version 1 of each prompt and config is in [prompts/](prompts/README.md).
 
-- Fetch: `get_prompt(name, label=APP_ENV, type="text", cache_ttl_seconds=0)`, then `compile(**variables)` returns one string.
-- Variables use Langfuse `{{name}}` syntax. `{{incidents}}` is inserted as a JSON block between `<incidents>` and `</incidents>` markers, and the instructions tell the model to treat it as data, not instructions. Changing the model or output schema is a new prompt version in Langfuse, not a code change.
-
-**The request's `environment` defines `APP_ENV` for that request.** `APP_ENV` selects the Langfuse prompt label and the Langfuse trace environment.
-
-The API and database use the take-home values `dev`, `qa`, `stage`, `prod` (the `Environment` enum in `core`). Langfuse uses `production` instead of `prod`, so the mapping happens only at the Langfuse boundary.
-
-| Request `environment` (filter on `/search`, `/assist`) | `APP_ENV` = Langfuse label = Langfuse environment |
-|---|---|
-| `dev` / `qa` / `stage` | same value |
-| `prod` | `production` |
-| not provided, or endpoint has no filter | `production` |
-
-- Resolved once per request in the route layer (`resolve_app_env(filters)`), stored in the request context. The search filter itself stays `prod`.
-- Prompt fetch: `get_prompt(name, label=APP_ENV, type="text", cache_ttl_seconds=0)`.
-- Langfuse prompts need the labels `dev`, `qa`, `stage`, `production`. Missing label → 503 "prompt `incident-assist` has no label `qa`; add it in Langfuse".
-- CLI commands use `production`.
-
-| Prompt | Used by | Variables |
-|--------|---------|-----------|
-| `incident-validation` | CandidateScreener (before assist) | `question`, `filters`, `incidents` (one batch ≤ 15: id, title, snippet) |
-| `incident-assist` | AssistService | `question`, `filters`, `incidents` (valid records only) |
-| `incident-catalog` | CatalogService | `service`, `count` (= `events_per_service`) |
-
-Prompt `config` (validated by `LLMConfig` in `app/core/models/prompt.py`):
-
-Version 1 of both prompts and configs: [prompts/](prompts/README.md).
-
-```json
-{
-  "model": "gpt-6.1-terra",
-  "reasoning": { "effort": "medium" },
-  "max_output_tokens": 6000,
-  "text": {
-    "format": {
-      "type": "json_schema",
-      "name": "assist_answer",
-      "strict": true,
-      "schema": { "type": "object", "properties": { "...": {} }, "required": ["..."], "additionalProperties": false }
-    }
-  }
-}
-```
-
-- `model` and `text.format` are required; `max_output_tokens` required (cost cap on a public endpoint; includes reasoning tokens); `reasoning` and `temperature` optional and passed through only when present.
-- OpenAI call: Responses API, `model`, `input` = compiled prompt text, `text` and `max_output_tokens` from config. Output parsed into the call's Pydantic output model (see "LLM output models"), then checked by guardrails.
-- Missing or invalid config → 503 "prompt `incident-assist` v3 config invalid: missing `model`".
-- Embedding model is not a prompt, so it stays an env var (`EMBEDDING_MODEL`).
-- The generation span links the prompt name and version, so Langfuse shows which prompt version produced each answer.
+| Prompt | Used by | Variables | Output model (`schema_name`) |
+|--------|---------|-----------|------------------------------|
+| `incident-validation` | `CandidateScreener` | `question`, `filters`, `incidents` (batch of ≤ 15: id, title, snippet) | `ValidationAnswer` (`validation_answer`) |
+| `incident-assist` | `AssistService` | `question`, `filters`, `incidents` (full records of valid hits) | `AssistAnswer` (`assist_answer`) |
+| `incident-catalog` | `CatalogService` | `service`, `count` | `CatalogBatch` (`catalog_batch`) |
 
 ```mermaid
 sequenceDiagram
-    participant S as AssistService
-    participant P as PromptProvider (Langfuse)
-    participant O as LLMClient (OpenAI)
-    S->>P: get("incident-assist", variables) with label = APP_ENV (from request environment)
-    P-->>S: CompiledPrompt(text, config, name, version)
-    S->>O: complete(CompiledPrompt)
-    O-->>S: LLMResult(output JSON, model, usage)
+    participant S as Service
+    participant P as LangfusePromptProvider
+    participant LF as Langfuse
+    participant O as OpenAIClient
+    participant AI as OpenAI Responses API
+    S->>P: get(name, variables, label = APP_ENV)
+    P->>LF: get_prompt(name, label, type text, cache_ttl_seconds 0)
+    LF-->>P: text prompt + config
+    P->>P: compile variables, validate config as LLMConfig
+    P-->>S: CompiledPrompt(name, version, label, text, config)
+    S->>O: complete(prompt, OutputModel)
+    O->>O: config schema name must equal OutputModel.schema_name
+    O->>AI: model, input = text, text.format, max_output_tokens, reasoning
+    AI-->>O: output_text
+    O->>O: parse into OutputModel, else LLMOutputInvalid
+    O-->>S: LLMResult(output, model, tokens)
 ```
 
-## LLM output models (every OpenAI call has a typed output)
+Prompts are fetched by label = `APP_ENV` with no cache and no fallback prompt, so a prompt change in Langfuse applies to the next request and a missing label fails loudly. `APP_ENV` is the request's `environment` (`dev`, `qa`, `stage` as is, `prod` → `production`, none → `production`); the CLI uses `production`. Changing the model or the schema is a new prompt version in Langfuse, not a code change.
 
-Each call has one Pydantic output model. The model is the source of truth; the JSON schema in the Langfuse prompt `config.text.format.schema` is generated from it (`python -m app.cli schemas` prints them to paste into Langfuse). Output is always parsed into the model; nothing reads raw JSON.
+- `LLMConfig` requires `model`, `max_output_tokens` (> 0) and `text.format` as a `json_schema` with `name` and `schema`; `reasoning` and `temperature` are optional and sent only when present. Extra keys are rejected.
+- `{{incidents}}` is a JSON block between `<incidents>` and `</incidents>`; the prompts tell the model to treat it as data and ignore instructions inside records.
+- The OpenAI client uses `LLM_TIMEOUT_SECONDS` (30) and one retry. A 4xx caused by the request (not 401, 403 or 429) means the prompt config is wrong and maps to 503 `prompt_config_invalid`.
+- The generation observation links the Langfuse prompt version, so each answer can be traced to the prompt that produced it.
+- The embedding model is not a prompt: `EMBEDDING_MODEL` (`text-embedding-3-small`), `EMBEDDING_DIMENSIONS` (1536), `EMBEDDING_TIMEOUT_SECONDS` (10).
 
-| Call | Prompt | Output model | Location |
-|------|--------|--------------|----------|
-| Assist | `incident-assist` | `AssistAnswer` | `app/services/assist/models/answer.py` |
-| Catalog (one call per service) | `incident-catalog` | `CatalogBatch` | `app/services/catalog/models/batch.py` |
-| Embeddings | none | `EmbeddingResult` | `app/core/models/prompt.py` (used by support and services) |
+## LLM output models
+
+The Pydantic model is the source of truth. `python -m app.cli schemas` prints the strict JSON schemas generated from it (`support/llm/schemas.py`) to paste into the Langfuse configs, and a unit test checks that `prompts/*.config.json` match.
 
 ```python
-class CandidateAssessment(BaseModel):
-    id: str                          # one entry per retrieved incident, each exactly once
-    relevant: bool                   # true / false, decided per candidate
-    reason: str                      # why it is or is not relevant, from the record only
-    rank: int | None                 # relevant: 1 = most relevant, 1..k unique; not relevant: null
-    rank_justification: str | None   # relevant: why this position vs the next; not relevant: null
+class CandidateValidation(BaseModel):  # app/services/assist/models/validation.py
+    id: str
+    valid: bool
+    reason: str
 
-class AssistAnswer(BaseModel):            # schema name: "assist_answer"
-    candidates: list[CandidateAssessment]   # every retrieved incident, relevant or not
-    next_steps: list[str]                    # checklist (empty when nothing is relevant)
-    customer_draft: str                      # short customer-facing reply
-    missing_info: list[str]                  # what to ask the user; required when nothing is relevant
 
-class CatalogEvent(BaseModel):
-    title: str
-    description: str
-    resolution_summary: str
-    tags: list[str]
+class ValidationAnswer(BaseModel):  # schema "validation_answer"
+    candidates: list[CandidateValidation]
 
-class CatalogBatch(BaseModel):            # schema name: "catalog_batch"
-    events: list[CatalogEvent]                  # exactly n (events_per_service), checked in CatalogService
 
-class EmbeddingResult(BaseModel):
-    vectors: list[list[float]]                  # one per input, each len == EMBEDDING_DIMENSIONS
-    model: str
-    total_tokens: int
+class CandidateAssessment(BaseModel):  # app/services/assist/models/answer.py
+    id: str
+    relevant: bool
+    reason: str
+    rank: int | None  # relevant: 1..k across all relevant; else null
+    rank_justification: str | None
+    group: int | None  # same root cause AND same fix; else null
+    group_reason: str | None
+
+
+class AssistAnswer(BaseModel):  # schema "assist_answer"
+    candidates: list[CandidateAssessment]
+    next_steps: list[str]
+    customer_draft: str
+    missing_info: list[str]
+
+
+class CatalogBatch(BaseModel):  # schema "catalog_batch", app/services/catalog/models/batch.py
+    events: list[CatalogEvent]  # CatalogEvent in app/core/models/catalog.py
 ```
 
-Rules:
-- Schemas use OpenAI strict mode: every field required, `additionalProperties: false`, no defaults. Count and value rules (relevance count, ranks, exactly `n` events, ID format) are checked in code, not in the schema.
-- Candidates sent to the LLM: `n` × the maximum answer size, in one LLM call. `n` is an optional `/assist` input (`candidate_multiplier`), default 3, allowed 1-5 (422 otherwise). Up to 5 relevant incidents are returned (`ASSIST_MAX_RESULTS` = 5), so the default sends the 15 most similar incidents from hybrid search; `n = 5` sends 25. Fewer are sent if search finds fewer. The value used is recorded on the `tool:search` span.
-- Coverage rule (guardrails): `candidates` contains every retrieved ID exactly once and no other ID.
-- Nullable fields (`rank`, `rank_justification`) are still required keys in strict mode; their value is `null` when not relevant.
-- Relevance rule (guardrails): `relevant: true` → `rank` and `rank_justification` set; `relevant: false` → both `null`. Every `reason` non-empty.
-- Rank rule (guardrails): ranks of relevant candidates are 1..k with no gaps or repeats.
-- Status is derived in code, not by the LLM: 0 relevant → `no_relevant_incidents` (requires non-empty `missing_info`); 1 or more → `answered`.
-- API response `relevant_incidents` = relevant candidates sorted by rank, top 5. 1-2 are returned with the note "only N relevant incidents found"; never padded. The full `candidates` list (including `relevant: false` with reasons) is also returned, so the decision on every retrieved incident can be checked.
-- The full input (question, filters, retrieved records) and output (ranked answer) are on the Langfuse generation span, so every ranking can be checked afterwards.
-- `LLMClient.complete(prompt, output_model) -> LLMResult[T]`. The service passes the model; the client parses and validates.
-- `config.text.format.name` must equal the model's schema name. Mismatch → 503 "prompt `incident-assist` v3 schema `x` does not match `AssistAnswer`".
-- Output that fails validation → 502 "LLM output does not match `AssistAnswer`: <field errors>". Logged with the correlation_id; never returned half-parsed.
-- Embedding vectors are checked for count and dimension; mismatch → 502.
+Strict mode makes every field required and forbids extra keys; nullable fields are still required keys. Count and consistency rules (coverage, ranks, groups, exactly n catalog events) are checked in code, not in the schema.
 
-The three support areas are built in parallel against shared contracts. Contracts are written first; each stream tests against fakes of the others.
+## Tests
 
-| Contract | Fields / methods |
-|----------|------------------|
-| `models/incident.py` | `Incident`, `Environment`, `Severity` |
-| `models/filters.py` | `SearchFilters` |
-| `models/prompt.py` | `LLMConfig`, `CompiledPrompt(name, version, label, text, config)`, `LLMResult[T](output: T, model, usage)`, `EmbeddingResult` |
-| `ports.py` | `PromptProvider.get(name, variables) -> CompiledPrompt`; `LLMClient.complete(CompiledPrompt, output_model: type[T]) -> LLMResult[T]`; `EmbeddingClient.embed_batch(texts) -> EmbeddingResult`; `IncidentRepository`; `SchemaRepository`; `TraceReader.get(correlation_id)` |
+| Kind | Where | Notes |
+|------|-------|-------|
+| Unit | `tests/unit/`, one file per component | 343 tests, offline. Fakes are injected through the `core/ports.py` Protocols; route tests use `app.dependency_overrides`. No AWS, database, OpenAI or Langfuse. |
+| Property | `tests/unit/test_properties.py` | Hypothesis tests for design Properties 1, 2, 3, 9, 10 and 11 |
+| Schema sync | `tests/unit/test_prompt_schemas.py` | `prompts/*.config.json` equal the schemas generated from the output models |
+| Live | `tests/live/`, marker `live` | `pytest -m live` with `API_BASE_URL` set; skipped otherwise. Plain `pytest` runs unit tests only. |
 
-Protocols live in `core`, so services import only `core`; `main.py` wires the real implementations.
-
-```mermaid
-flowchart LR
-    C0[0. Contracts in core] --> A[A. Database<br/>SQL, repositories,<br/>Schema/Seed/Ingest]
-    C0 --> B[B. Langfuse<br/>PromptProvider, traced_endpoint,<br/>correlation, TraceReader]
-    C0 --> O[C. OpenAI<br/>LLMClient, EmbeddingClient]
-    A & B & O --> I[D. Integration<br/>Search, Assist, Catalog,<br/>API routes, CLI]
-    I --> DOC[E. README, PROMPTS, AI-NOTES, TRADEOFFS]
-```
-
-| Stream | Builds | Tests with |
-|--------|--------|-----------|
-| A. Database | SQL files, repositories, SchemaService, SeedService, IngestService | fake `EmbeddingClient` |
-| B. Langfuse | `PromptProvider`, `LLMConfig` validation, `traced_endpoint` (root observation), correlation middleware, `TraceReader` | fake Langfuse client |
-| C. OpenAI | `LLMClient` (Responses API, timeout), `EmbeddingClient` (batch, timeout) | fake OpenAI client |
-| D. Integration | SearchService, AssistService + guardrails, CatalogService, routes, CLI | fakes from A, B, C |
-
-## Unit tests (one file per component, no AWS)
-
-| Component | Tests |
-|-----------|-------|
-| `SchemaService` | runs all SQL files in order, second run is a no-op, never drops |
-| `CatalogService` | no input → 20 default services × 20 events; custom `services` and `n` respected; names normalized and deduped; out-of-range `n` or empty list rejected; one LLM call per service; wrong event count rejected (fake LLM); `get()` reads the file, missing file → clear error |
-| `SeedService` | see [database-architecture.md](database-architecture.md#unit-tests); also every event comes from the catalog; catalog total outside 200-500 → clear error |
-| `IngestService` | see [database-architecture.md](database-architecture.md#unit-tests) |
-| `fingerprint` | see [database-architecture.md](database-architecture.md#unit-tests) |
-| `query_builder` | see [database-architecture.md](database-architecture.md#unit-tests) (hybrid) |
-| `SearchService` | limit cap, snippet length, empty query |
-| `IncidentService` | found, not found → 404 error |
-| `guardrails` | unknown, missing or repeated candidate IDs rejected; relevant without rank, or not relevant with rank, rejected; ranks 1..k unique; empty reasons rejected; 0 relevant → `no_relevant_incidents` and `missing_info` required; 1-2 relevant returned with the "only N" note; more than 5 relevant → top 5 by rank |
-| `AssistService` | no hits skips LLM, Langfuse/LLM errors → clear error, steps recorded; `candidate_multiplier` missing → 3 (15 candidates); 1-5 accepted, other values → 422; one LLM call regardless of `n` |
-| `resolve_app_env` | `dev`/`qa`/`stage` kept; `prod` → `production`; missing → `production`; search filter still `prod`; any other value rejected with 422 |
-| `langfuse` prompts | text prompt only (chat prompt → clear error); host from `LANGFUSE_HOST`; `{{incidents}}` wrapped in markers; fetched with label = `APP_ENV`; missing label → clear error; prompt compiled with variables; `config` parsed into `LLMConfig`; missing `model`/`text.format`/`max_output_tokens` → clear error; unreachable → `LangfuseUnavailable` |
-| output models | `AssistAnswer` and `CatalogBatch` schemas are strict-mode valid (all required, no extra fields); generated schema matches the expected name; `cli schemas` prints them |
-| `openai` client | sends `model`, `text`, `max_output_tokens` from config; parses output into the given model; invalid output → 502 with field errors; schema name mismatch → 503; embedding count/dimension mismatch → 502; timeout → `LLMTimeout`; bad key → `LLMUnavailable` (fake OpenAI client) |
-| `secrets_manager` | each secret read with its exact keys; missing key → message with secret and key name only; values never in messages or logs |
-| tracing | see [trace-architecture.md](trace-architecture.md#unit-tests-testsunitsupporttracing) |
-| API routes | validation 422, status codes, `GET /catalog` returns the dictionary (FastAPI TestClient + fake services via `dependency_overrides`) |
-| `container` | builds every service with the given fake clients; API and CLI get the same wiring |
-
-Fakes are injected through Protocols (`IncidentRepository`, `SchemaRepository`, `LLMClient`, `EmbeddingClient`, `PromptProvider`, `TraceReader`). Live tests in `tests/live/` hit the running EC2 API (skipped unless `API_BASE_URL` is set).
-
-## Deferred to the documentation phase (ask before writing the README)
-
-- EC2 deployment steps in the README: Python 3.12 on Amazon Linux 2023, venv, systemd unit (survives logout and reboot), `sslmode=require` for RDS.
+| Component | Test file |
+|-----------|-----------|
+| guardrails, validation grounding | `test_guardrails.py`, `test_screening.py` |
+| AssistService | `test_assist_service.py` |
+| query builder, SearchService | `test_query_builder.py`, `test_query_builder_extra.py`, `test_search_service.py` |
+| ingest | `test_ingest_plan.py`, `test_ingest_service.py` |
+| seed, schema, catalog | `test_seed_generator.py`, `test_seed_service.py`, `test_schema_service.py`, `test_catalog_service.py` |
+| core | `test_core_normalize.py`, `test_core_fingerprint.py`, `test_core_embedding_text.py`, `test_core_app_env.py`, `test_core_settings.py` |
+| OpenAI | `test_openai_client.py`, `test_openai_embedder.py`, `test_llm_errors.py` |
+| Langfuse, tracing | `test_langfuse_prompts.py`, `test_langfuse_trace_reader.py`, `test_tracing_correlation.py`, `test_tracing_endpoint.py`, `test_tracing_logging.py` |
+| secrets, container, routes | `test_secrets.py`, `test_container.py`, `test_routes.py` |
 
 ## Check against the take-home
 
 | Requirement | Covered by |
 |-------------|-----------|
-| Separation: ingest, search, assist, config, observability | services + support/tracing + core/settings |
-| Generator with fixed seed | CatalogService (LLM, committed file) + SeedService (fixed seed) |
-| `POST /ingest` idempotent with counts | IngestService (same payload twice = all `skipped`) |
-| Same search path for /assist | AssistService → SearchService |
-| Grounding, cite IDs, no invention | Langfuse prompt + guardrails |
-| "3 to 5 most relevant IDs and why" | every candidate marked `relevant` true/false with a reason; relevant ones ranked with `rank_justification`; top 3-5 when available, 1-2 never padded (deviation explained in TRADEOFFS.md) |
-| Clear LLM error | core/errors + API handler |
-| correlation_id in every log, step list | JSON log lines to stdout and Langfuse events; step lines `tool:search` input/output and `selected_ids`; Langfuse observations + `/debug/trace` |
-| Config via env vars | core/settings (secrets from Secrets Manager) |
-| ≥2 unit tests on query/guardrails | covered above |
-
-## Review: your design is sound. Suggested improvements
-
-1. **Add a `core` layer** for models shared by several layers (`Incident`, `SearchFilters`). Without it, the database layer would have to import from a service, breaking your downward-only rule.
-2. **Protocols in `core/ports.py`** (`LLMClient`, `IncidentRepository`, `PromptProvider`) so services are tested with fakes, work streams run in parallel, and OpenAI could be swapped for Azure.
-3. **Dependency wiring only in `app/container.py`**, used by `main.py` and `cli.py`; services are injected into routes with `Depends`. Services never build their own clients.
-4. **Keep `guardrails` and `query_builder` pure functions.** They are the take-home's required test targets.
-5. **Schema and seed as CLI commands, not endpoints.** Creating tables is a deployment step and should not be exposed over HTTP.
+| Separation: ingest, search, assist, config, observability | services, `support/tracing`, `core/settings.py` |
+| Generator with fixed seed | `CatalogService` (LLM, committed file) + `SeedService` (`random.Random(SEED)`) |
+| `POST /ingest` idempotent with counts | `IngestService`; a re-run leaves rows and embeddings unchanged |
+| Same search path for `/assist` | `CandidateScreener` → `SearchService.candidates` |
+| Grounding, cite IDs, no invention | prompts + `ground_verdicts` + `guardrails.ground` |
+| "3 to 5 most relevant IDs and why" | relevant groups with rank, reason and justification; 1-2 returned with a note, never padded (TRADEOFFS.md) |
+| Clear LLM errors | `core/errors.py`, `support/llm/errors.py`, `api/errors.py` |
+| correlation_id in every log line, step list | JSON stdout logs and Langfuse events; `tool:search`, `step validation`, `step selected_ids`; `/debug/trace` |
+| Config through env vars | `core/settings.py`; secrets from Secrets Manager |
+| Unit tests on query building and guardrails | `test_query_builder*.py`, `test_guardrails.py`, `test_properties.py` |

@@ -1,13 +1,12 @@
 # Database Architecture
 
-PostgreSQL on RDS (us-east-2) with the pgvector extension. Three services own the database:
+PostgreSQL on RDS (us-east-2) with the pgvector extension. All SQL lives in `app/support/database/`; DDL is in versioned `.sql` files and every statement with user values is parameterized. Three services own the database:
 
 | Service | Does | Entry |
 |---------|------|-------|
-| `SchemaService` | Creates tables and indexes only (DDL). No data. Idempotent. | `python -m app.cli schema` |
-| `SeedService` | **Reset:** drops the app tables, calls `SchemaService` to recreate them, fills the type tables, generates the initial incidents, passes them to `IngestService`. The only code that drops tables. | `python -m app.cli seed` (CLI only, no endpoint, no confirmation) |
-| `IngestService` | Single write path for incidents: `incidents`, `tags`, `incident_tags`. Used by the seed and later to add new incidents. | called by seed; `POST /ingest` |
- Table names are snake_case (Postgres convention): `serviceTypes` → `service_types`, `incidentTags` → `incident_tags`.
+| `SchemaService` | Applies the DDL files in order. Idempotent (`IF NOT EXISTS`), never inserts or drops. | `python -m app.cli schema` |
+| `SeedService` | Reset: drops the six incident tables, calls `SchemaService`, fills the type tables, generates incidents with a fixed seed, passes them to `IngestService`, builds the vector index. The only code that drops tables. | `python -m app.cli seed` (CLI only, no confirmation) |
+| `IngestService` | The single write path for `incidents`, `tags` and `incident_tags`, then embeds pending rows. | seed; `POST /ingest` |
 
 ## ER diagram
 
@@ -16,11 +15,11 @@ erDiagram
     service_types     ||--o{ incidents     : "service"
     severity_types    ||--o{ incidents     : "severity"
     environment_types ||--o{ incidents     : "environment"
-    incidents         ||--o{ incident_tags : has
-    tags              ||--o{ incident_tags : labels
+    incidents         ||--o{ incident_tags : "has"
+    tags              ||--o{ incident_tags : "labels"
 
     incidents {
-        text        id PK "inc-00001, CHECK ^inc-[0-9]{5}$"
+        text        id PK "inc-00001, CHECK format"
         timestamptz created_at
         smallint    environment_id FK
         smallint    service_id FK
@@ -28,9 +27,9 @@ erDiagram
         text        title
         text        description
         text        resolution_summary
-        char64      content_hash UK "SHA-256 of normalized JSON"
-        tsvector    search_vector "generated"
-        vector1536  embedding "nullable, NULL = pending"
+        char64      content_hash UK "SHA-256, unique deferred"
+        tsvector    search_vector "generated, weights A B C"
+        vector1536  embedding "NULL means pending"
         text        embedding_model
         char64      embedding_text_hash "SHA-256 of embedded text"
         timestamptz updated_at
@@ -40,8 +39,8 @@ erDiagram
         text name UK "lowercase"
     }
     incident_tags {
-        text incident_id FK "incidents.id"
-        int  tag_id FK
+        text incident_id PK, FK "cascade delete"
+        int  tag_id PK, FK "cascade delete"
     }
     service_types {
         smallint id PK
@@ -51,71 +50,113 @@ erDiagram
     severity_types {
         smallint id PK
         text     code UK "critical"
-        smallint rank "1 = most severe"
+        smallint rank UK "1 = most severe"
     }
     environment_types {
         smallint id PK
         text     code UK "prod"
     }
     query_embeddings {
-        char64      query_hash PK "SHA-256 of normalized query + model"
+        char64      query_hash PK "SHA-256 of model and query"
         text        model
         vector1536  embedding
         timestamptz created_at
     }
 ```
 
+Type tables hold the allowed codes, so foreign keys enforce them and filters compare short ids. `query_embeddings` stands alone and survives every reseed, so the same query keeps the same vector. Table names are snake_case.
+
 ## Tables
 
 | Table | Notes |
 |-------|-------|
-| `environment_types` | `dev`, `qa`, `stage`, `prod` (take-home values) |
-| `severity_types` | `critical`(1), `high`(2), `medium`(3), `low`(4). `rank` allows "severity ≥ high" filters later |
-| `service_types` | The services in `data/service_catalog.json` (its keys; 20 by default) |
-| `tags` | One row per distinct tag, lowercase, unique |
+| `environment_types` | `dev`, `qa`, `stage`, `prod` (from the `Environment` enum) |
+| `severity_types` | `critical` 1, `high` 2, `medium` 3, `low` 4 (from `SEVERITY_RANK`) |
+| `service_types` | keys of `data/service_catalog.json` (20 by default); `name` = `code` |
+| `tags` | one row per distinct lowercase tag |
 | `incident_tags` | PK `(incident_id, tag_id)`, both FKs `ON DELETE CASCADE` |
-| `query_embeddings` | Stored query vectors so the same query always uses the same vector (see Reproducible results). Not dropped by the seed. |
-| `incidents` | FKs to the three type tables, `content_hash` `UNIQUE NOT NULL`, `CHECK (id ~ '^inc-[0-9]{5}$')` as a second safety net, `embedding vector(1536)` nullable (`NULL` = pending, see Embeddings) |
+| `query_embeddings` | stored query vectors (see Reproducible results); never dropped by the seed |
+| `incidents` | FKs to the type tables; `CHECK (id ~ '^inc-[0-9]{5}$')`; `content_hash` `UNIQUE DEFERRABLE INITIALLY DEFERRED`, so one batch may move a hash from one row to another in any order; `embedding vector(1536)` nullable |
 
-Type tables are filled by `SeedService` from fixed lists, never from incident data, so the defensive check stays meaningful: environments and severities from the Python `Enum`s in `app/core/models/`, services from the keys of `data/service_catalog.json`. Insert uses `ON CONFLICT (code) DO NOTHING`. The API uses the same enums to validate filters before hitting the database.
+Type tables are filled only by `SeedService` from fixed lists, never from incident data, so the ingest check against them stays meaningful. Inserts use `ON CONFLICT (code) DO NOTHING`.
+
+SQL files, applied in name order: `001_types.sql`, `002_tags.sql`, `003_incidents.sql` (also `CREATE EXTENSION IF NOT EXISTS vector`), `004_query_embeddings.sql`, `005_indexes.sql`.
 
 ## Indexes
 
 | Index | Purpose |
 |-------|---------|
-| `incidents.search_vector` GIN | full-text search |
-| `incidents (environment_id, service_id, severity_id)` | filters |
-| `incidents.created_at` | ordering / date filters |
-| `incidents.content_hash` UNIQUE | duplicate check |
-| `incident_tags (tag_id, incident_id)` | tag filter |
+| `incidents_search_vector_idx` GIN on `search_vector` | full-text search |
+| `incidents_filters_idx` on `(environment_id, service_id, severity_id)` | filters |
+| `incidents_created_at_idx` | filter-only listing, newest first |
+| `incidents_content_hash_key` UNIQUE | duplicate check |
+| `incident_tags_tag_idx` on `(tag_id, incident_id)` | tag filter |
+| `incidents_embedding_ivfflat` | vector search, built by the seed (below) |
 
-`search_vector` is a generated column: `title` weight A, `description` B, `resolution_summary` C. Tags are matched through `incident_tags`, not inside the vector.
+`search_vector` is generated: `title` weight A, `description` B, `resolution_summary` C, English configuration. Tags are matched through `incident_tags`, not inside the vector.
 
 ### Vector index: IVFFlat, cosine, built at the end of the seed
 
 | Choice | Value | Why |
 |--------|-------|-----|
-| Index | `CREATE INDEX incidents_embedding_ivfflat ON incidents USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)` | Cosine matches how OpenAI embeddings are compared (`<=>`). |
-| When | last step of `cli seed`, after ingest and embeddings, then `ANALYZE incidents` | IVFFlat clusters the rows present at creation. Built on an empty table, every list is empty and recall collapses. Not in the DDL files for that reason. |
-| `lists` | `clamp(embedded_rows / 1000, 1, 10)` | pgvector guidance: rows / 1000 up to 1M rows. With fewer than 1,000 rows (this project: 100-500) that is 1 list, i.e. one cluster holding every row. |
-| `ivfflat.probes` | 10, set per search transaction with `set_config('ivfflat.probes', '10', true)` | Probes ≥ lists means every list is scanned: exact results, filters never lose rows, and the same query always returns the same order (Reproducible results). |
+| Index | `USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)` | Cosine is how OpenAI embeddings are compared (`<=>`). |
+| When | last step of `cli seed`, after ingest and embedding, then `ANALYZE incidents` | IVFFlat learns its lists from the rows present at creation; built on an empty table, recall collapses. That is why it is not in the DDL files. |
+| `lists` | `clamp(embedded_rows / 1000, 1, IVFFLAT_MAX_LISTS = 10)` | pgvector guidance is rows / 1000. The seed has 800 rows, so `lists = 1`. |
+| `ivfflat.probes` | `IVFFLAT_PROBES` = 10, set per search transaction with `set_config('ivfflat.probes', '10', true)` | probes ≥ lists scans every list: exact results, filters never lose rows, same order every time. |
 
-At this size the index gives no speed gain over a sequential scan; it is there so the query path, settings and seed step are already correct when the data grows. Past ~10,000 rows, raise `IVFFLAT_MAX_LISTS` and set probes to about `sqrt(lists)`, accepting approximate results, or switch to HNSW.
+At 800 rows the index gives no speed gain; it is there so the query shape, settings and seed step are already right when the data grows. Past about 10,000 rows, raise `IVFFLAT_MAX_LISTS` and accept approximate results, or switch to HNSW. Rows added later through `POST /ingest` are found too; the lists are retrained on the next seed.
 
-The vector branch reads `incidents` directly and orders by `embedding <=> query` with `LIMIT`, so the planner can use the index. Similarity (rounded to 6 decimals) and the `VECTOR_MIN_SIMILARITY` threshold are applied to that result. The `total` count still scans all filtered rows (a few hundred).
+## Search (hybrid, one code path for `/search` and `/assist`)
 
-Incidents added later through `POST /ingest` are found through the index too; the lists are not retrained until the next seed, which is fine at this size.
+```mermaid
+flowchart TD
+    Q["q, filters, limit, offset"] --> T{"q empty after trim?"}
+    T -- yes --> LIST["filtered rows by created_at desc, id<br/>no embedding call, score 0"]
+    T -- no --> VEC["query vector: query_embeddings hit,<br/>or embed once and store"]
+    VEC --> FTS["fts branch on the filtered CTE:<br/>websearch_to_tsquery, ts_rank desc, id<br/>LIMIT branch_limit"]
+    VEC --> VB["vec branch on incidents directly, same filters:<br/>ORDER BY embedding cosine distance LIMIT branch_limit<br/>similarity rounded to 6 decimals, kept if at least 0.30"]
+    FTS --> RRF["RRF: score = sum of 1 / (60 + rank)<br/>ORDER BY score desc, id"]
+    VB --> RRF
+    RRF --> PAGE["LIMIT limit OFFSET offset<br/>snippet: ts_headline for text hits, else first 200 chars"]
+    VEC --> CNT["count: filtered rows matching the text<br/>or the vector above the threshold, no cap"]
+    PAGE --> OUT["total + hits"]
+    CNT --> OUT
+    LIST --> OUT
+```
+
+Full-text finds exact words and codes; vectors find the same problem in other words. Reciprocal rank fusion (`RRF_K` = 60) merges the two rankings without tuning score scales. The vector branch reads `incidents` directly with `ORDER BY embedding <=> vector LIMIT n`, the shape pgvector can serve from the IVFFlat index.
+
+1. Filters (`environment`, `service`, `severity`, all given `tags`) apply to both branches.
+2. Each branch returns `branch_limit` = max(`SEARCH_BRANCH_LIMIT` 50, offset + limit) rows, so later pages are never empty.
+3. `total` is the real number of matches, counted by a separate query without the branch cap.
+4. Paging uses `LIMIT` and `OFFSET`. `/search` caps `limit` at `SEARCH_MAX_LIMIT` (50, default 10). `/assist` reads batches through `SearchService.candidates(filters, q, k, offset)`.
+5. If the query embedding call fails: 503 `embedding_unavailable` (504 on timeout), no fallback to text only.
+
+`IncidentRepository.get_many(ids)` returns full records in the requested order, with tags sorted; `/assist` uses it for the valid hits.
+
+### Reproducible results
+
+Same data and same request give the same `total`, IDs and order.
+
+| Risk | Rule |
+|------|------|
+| Ties in a score | every `ORDER BY` ends with `id` (full-text rank, similarity, RRF score, `created_at`) |
+| OpenAI returns a slightly different vector for the same text | query vectors are stored in `query_embeddings`, key = SHA-256 of `model + "\n" + query` (query trimmed, whitespace collapsed, case kept); the first call embeds and stores, later calls reuse it |
+| Float noise at the threshold | similarity rounded to 6 decimals before the threshold and the ranking |
+| Approximate index | probes ≥ lists, so the IVFFlat scan is exact |
+
+`/assist` candidates follow these rules. The LLM verdicts are not guaranteed to be identical between calls, so every LLM input and output is kept on the Langfuse generation.
 
 ## Embeddings
 
 | Choice | Value | Why |
 |--------|-------|-----|
-| Model | `text-embedding-3-small` | Current OpenAI model, $0.02 / 1M tokens. `3-large` scores 2.3 points higher on MTEB at 6.5× the price and 3072 dims, more than pgvector can index as `vector`. `ada-002` is older, costs more, scores lower. |
-| Dimensions | 1536 (model default) | Full quality; size is irrelevant at this row count |
-| Distance | cosine (`<=>`) | Recommended for OpenAI embeddings |
-| Settings | `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` env vars with these defaults | |
+| Model | `text-embedding-3-small` (`EMBEDDING_MODEL`) | current, cheap OpenAI model; `3-large` costs 6.5× more for a small gain and has 3072 dimensions |
+| Dimensions | 1536 (`EMBEDDING_DIMENSIONS`) | model default, full quality |
+| Distance | cosine (`<=>`) | recommended for OpenAI embeddings |
+| Timeout | `EMBEDDING_TIMEOUT_SECONDS` = 10 | |
 
-**Embedded text:** labeled plain text, built by one pure function `app/core/embedding_text.py`:
+Embedded text is labeled plain text from `app/core/embedding_text.py`, with empty fields left out:
 
 ```
 title: Checkout timeouts after deploy
@@ -123,100 +164,59 @@ description: p95 latency above 8s on /checkout after release 2.4.1.
 resolution: Rolled back release 2.4.1 and raised the pool size.
 ```
 
-- Fields: `title`, `description`, `resolution_summary`. Service, environment, severity and tags are exact filters, not meaning.
-- Original text (trimmed), not the lowercased hash copy. Empty fields are left out.
-- Plain text, not JSON: queries are plain text, and braces, quotes and escapes add noise to the vector.
-- Query side: the `/search` `q` or `/assist` question, embedded with the same model.
+Service, environment, severity and tags are exact filters, so they are not embedded. Plain text matches how queries look; JSON punctuation would add noise to the vector.
 
-**When to embed:** incidents are saved first; embedding is a separate, retryable step.
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: insert
+    Pending --> Embedded: embed step saves vector, model and text hash
+    Embedded --> Pending: title, description or resolution changed
+    Embedded --> Pending: EMBEDDING_MODEL changed
+    Embedded --> Embedded: severity, service, environment, tags or date changed
+    Pending --> Pending: OpenAI failure, retried by the next ingest call
+```
 
-- `embedding` is nullable. `NULL` means pending.
-- `embedding_text_hash` = SHA-256 of the text the stored embedding was built from.
-- When an incident is inserted, or updated so that its embedded text hash changes, `embedding`, `embedding_model` and `embedding_text_hash` are set to `NULL`. A change to severity or tags alone keeps the embedding.
-- **Pending** = `embedding IS NULL OR embedding_model IS DISTINCT FROM <EMBEDDING_MODEL>`. Changing the model re-embeds everything on the next call.
-- At the end of every ingest call (seed or `POST /ingest`), IngestService embeds **all** pending rows, not only the ones in this call. This runs even if every incident in the call was skipped, duplicate or invalid. Only a request rejected with 422 skips it. Up to 100 rows per OpenAI request. Rows are selected with `FOR UPDATE SKIP LOCKED` so two concurrent calls never embed the same row.
-- If OpenAI fails, the incidents stay saved, the call still returns 200, and the response reports what is pending. The next ingest call picks them up. Rows already embedded are never touched again, so retrying is idempotent.
+Incidents are saved first and embedded in a separate step, so an OpenAI outage never loses data. An update clears the embedding only when the embedded text hash changes. Pending means `embedding IS NULL OR embedding_model IS DISTINCT FROM EMBEDDING_MODEL`.
+
+- Every ingest call (seed or `POST /ingest`, even with no body) embeds all pending rows, not only its own, in batches of `EMBEDDING_BATCH_SIZE` (100).
+- Each batch is one transaction: `SELECT ... FOR UPDATE SKIP LOCKED`, one OpenAI call, save. Two concurrent calls never embed the same row.
+- A failure (unavailable, timeout, wrong count or dimension) stops the step, keeps everything already saved, and the 200 response reports `embedding_pending` and `embedding_error`.
 - Pending rows are still found by full-text search; only the vector branch skips them.
 
-## Search (hybrid, one code path for `/search` and `/assist`)
+## Normalization
 
-The take-home requires `/assist` to use the same search path as `/search`, so both use hybrid search.
-
-1. Apply filters (environment, service, severity, tags) to both branches.
-2. Full-text branch: top 50 by `ts_rank` on `search_vector`.
-3. Vector branch: rows with `embedding IS NOT NULL`, top 50 by cosine similarity, kept only if similarity ≥ `VECTOR_MIN_SIMILARITY` (default 0.30, tuned on the seed data).
-4. Merge with reciprocal rank fusion: `score = Σ 1 / (60 + rank)`.
-5. `total` = real number of matching incidents: full-text matches plus vector matches above the threshold, each counted once, without the top-50 cap (a separate `COUNT` with the same filters). Return top `limit`.
-
-Empty `q` with filters only: no embedding, ordered by `created_at` desc, then `id`. If the query embedding call fails: 503 "OpenAI unavailable", no silent fallback to text only.
-
-### Reproducible results
-
-Same data + same request = same `total`, same IDs, same order.
-
-| Risk | Rule |
-|------|------|
-| Ties in a score | every `ORDER BY` ends with `id ASC` (full-text rank, similarity, RRF score, `created_at`) |
-| OpenAI returns a slightly different vector for the same query text | query embeddings are stored in `query_embeddings` (key: SHA-256 of normalized query text + model). The first call embeds and stores; every later call reuses the stored vector. |
-| Float noise at the threshold | similarity rounded to 6 decimals before comparing with `VECTOR_MIN_SIMILARITY` and before ranking |
-| Incident vectors | stored once per text hash, never recomputed unless the text or model changes |
-
-`query_embeddings` is not dropped by the seed, so the same query gives the same vector across reseeds. `/assist` candidates are reproducible by these rules; the LLM's selection is not guaranteed to be identical between calls, so every input and output is kept on the Langfuse generation span.
-
-## Normalization (stored values)
-
-Applied by `app/core/normalize.py` before validation, hashing and storage.
+Applied by `app/core/normalize.py` before checks, hashing and storage.
 
 | Field | Stored as |
 |-------|-----------|
-| `id` | lowercase, trimmed, format `inc-00001` (zero-padded so text order = numeric order; `" INC-00001"` → `"inc-00001"`) |
+| `id` | lowercase, trimmed, `inc-` + 5 digits (`" INC-00001"` → `"inc-00001"`) |
 | `service`, `environment`, `severity` | lowercase, trimmed, inner whitespace collapsed (`" Payments-API "` → `"payments-api"`) |
-| `tags` | each lowercase and trimmed; empties dropped; deduped; **alphabetical order** |
-| `title`, `description`, `resolution_summary` | original case and punctuation kept; trimmed |
-
-Tags are also returned in alphabetical order by the API.
+| `tags` | each normalized like a code; empties and duplicates dropped; alphabetical |
+| `title`, `description`, `resolution_summary` | trimmed; case and punctuation kept |
+| `created_at` | timezone-aware input required, stored as UTC |
 
 ## Content hash (duplicate detection)
 
-SHA-256 is a hash, not encryption: one-way, same input → same 64-char hex. It identifies duplicates; it does not protect data.
+SHA-256 of canonical JSON, from the pure function `app/core/fingerprint.py`. It identifies duplicates; it does not protect data.
 
-**Fields hashed:** `service`, `environment`, `severity`, `title`, `description`, `resolution_summary`, `tags`.
-**Not hashed:** `id`, `created_at`, `updated_at`. The same incident under a new id or date is still a duplicate.
-
-**Steps** (pure function `app/core/fingerprint.py`, used by seed and ingest), on the normalized values above:
-
-1. Free text (`title`, `description`, `resolution_summary`), for the hash only: Unicode NFKC, lowercase, remove special characters (keep letters, digits, spaces), collapse whitespace, trim.
-2. Tags already alphabetical.
-3. Remove properties that are `null`, empty string or empty list.
-4. Build JSON with sorted keys and no spaces: `json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`.
-5. `sha256(json.encode("utf-8")).hexdigest()`.
+- Hashed: `service`, `environment`, `severity`, `title`, `description`, `resolution_summary`, `tags`.
+- Not hashed: `id`, `created_at`, `updated_at`. The same incident under a new id or date is a duplicate.
+- Free text, for the hash only: NFKC, lowercase, special characters replaced by spaces, whitespace collapsed.
+- Null, empty string and empty list values removed; `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`.
 
 ```
 "DB  Timeout!!  on Checkout"            → "db timeout on checkout"
 ["Timeout", "postgres", "postgres "]   → ["postgres", "timeout"]
-{"title": "x", "resolution_summary": null} → {"title":"x"}
 ```
 
-```mermaid
-flowchart LR
-    I[Incident] --> N[normalize] --> V{types valid?}
-    V -- no --> INV[invalid, skipped]
-    V -- yes --> J[canonical JSON, nulls removed] --> H[SHA-256] --> C{hash exists?}
-    C -- no --> INS[insert]
-    C -- "yes, same id" --> SK[skipped]
-    C -- "yes, other id" --> DUP[duplicate, rejected]
-```
+## Ingest (`POST /ingest`)
 
-## Ingest rules (`POST /ingest`)
-
-Input: a list of incidents to upsert (from SeedService, or the `POST /ingest` body).
-
-`POST /ingest` body is a JSON array of incidents, upserted by `id`:
+The body is a JSON array of up to 500 incidents, upserted by `id`. No body, `null` or `[]` writes nothing and only runs the embedding step.
 
 ```json
 [
   {
-    "id": "inc-00401",
+    "id": "inc-00801",
     "created_at": "2026-11-07T14:02:00Z",
     "environment": "prod",
     "service": "payments-api",
@@ -231,27 +231,47 @@ Input: a list of incidents to upsert (from SeedService, or the `POST /ingest` bo
 
 | Body check (422, whole request rejected) | Value check (per incident, counted as `invalid`) |
 |---|---|
-| not an array, more than 500 items (no body, `null` and `[]` are allowed) | `environment`, `service` or `severity` not in its type table |
-| missing required field, wrong type, bad `created_at` | |
-| `id` not matching `inc-` + 5 digits, case-insensitive (`^inc-\d{5}$` after trim and lowercase) | |
-| text over length limits (title 200, description and resolution 5000, 20 tags of 50 chars) | |
+| not an array, or more than 500 items | `environment`, `service` or `severity` not in its type table |
+| missing field, wrong type, `created_at` without a timezone | |
+| `id` not `inc-` + 5 digits (case-insensitive, after trim) | |
+| title 1-200 characters, description and resolution up to 5000, at most 20 tags of 50 characters | |
 
-Order per call:
+```mermaid
+flowchart TD
+    BODY["POST /ingest body or seed list"] --> E{"no body, null or empty list?"}
+    E -- yes --> EMB
+    E -- no --> TX["one transaction: load type tables,<br/>find existing rows by id and by hash"]
+    TX --> EACH["each item in order, earlier items<br/>treated as already applied"]
+    EACH --> TYPES{"codes in the type tables?"}
+    TYPES -- no --> INV["invalid: listed with field and value"]
+    TYPES -- yes --> HASH["normalize, content hash, embedded text hash"]
+    HASH --> OWN{"hash owned by another id?"}
+    OWN -- yes --> DUP["duplicate: listed with duplicate_of"]
+    OWN -- no --> CUR{"current hash of this id"}
+    CUR -- "same" --> SKIP["skipped"]
+    CUR -- "none" --> ING["ingested"]
+    CUR -- "different" --> UPD["updated, old hash released"]
+    ING --> PLAN["planned row for this id = this version<br/>a repeated id: last version wins"]
+    UPD --> PLAN
+    PLAN --> WRITE["insert or update once per id, replace tags, commit"]
+    SKIP --> WRITE
+    INV --> WRITE
+    DUP --> WRITE
+    WRITE --> EMB["embed all pending rows,<br/>batches of 100, FOR UPDATE SKIP LOCKED"]
+    EMB --> RES["counts, embedding_pending, embedding_error, rejected"]
+```
 
-1. **Write step, one transaction:** load the three type tables (filled earlier by the seed); for each incident normalize, defensive check, hash, then insert, update, skip or reject; upsert `tags`, link `incident_tags`. Commit.
-2. **Embed step, after commit:** embed all pending rows in batches; each batch is its own small transaction. An OpenAI failure stops this step but never undoes step 1.
-
-`POST /ingest` with no body, `null` or `[]` skips step 1 and only runs step 2. Use it to retry pending embeddings without sending incidents. All write counts are 0.
-
-**Defensive check:** after normalization, `environment`, `service` and `severity` must each exist in their type table. The ingest service loads the three type tables once per run and checks every incident against them. An incident that fails is not stored, is counted as `invalid`, and is listed with its reason.
+Classification is the pure function `plan_writes` (`services/ingest/plan.py`), so every case is unit-tested without a database. Items are applied in order: a repeated id within one batch is written once with its last version, and a hash freed by an earlier update can be reused later in the same batch (the unique constraint is checked at commit).
 
 | Case | Result | Count |
 |------|--------|-------|
-| Unknown environment, service or severity | not stored, listed with reason | `invalid` |
-| New id, new hash | insert incident + tags | `ingested` |
-| Existing id, same hash | nothing | `skipped` |
-| Existing id, new hash, not used by another row | update incident, replace tags | `updated` |
-| Hash already used by a different id | not stored, listed | `duplicates` |
+| unknown environment, service or severity | not stored, listed with field and value | `invalid` |
+| new id, new hash | insert incident and tags | `ingested` |
+| existing id, same hash | nothing written | `skipped` |
+| existing id, other hash | update incident, replace tags | `updated` |
+| hash owned by a different id | not stored, listed with `duplicate_of` | `duplicates` |
+
+Running the same body twice creates no duplicates and calls OpenAI for nothing. With unique ids, the second run counts every item as `skipped`. With a repeated id, the second run may count those items as `updated`: it writes the same values again (only `updated_at` moves) and keeps the embedding, because the embedded text hash is unchanged.
 
 Response:
 
@@ -259,7 +279,7 @@ Response:
 {
   "ingested": 396, "updated": 0, "skipped": 0, "duplicates": 1, "invalid": 3,
   "embedded": 300, "embedding_pending": 96,
-  "embedding_error": "OpenAI timeout after 30s; pending rows will be retried on the next ingest call",
+  "embedding_error": "OpenAI did not answer within 10 s; retry, or raise LLM_TIMEOUT_SECONDS (embeddings: EMBEDDING_TIMEOUT_SECONDS) and restart the API; pending rows will be retried on the next ingest call",
   "rejected": [
     {"id": "inc-00012", "reason": "duplicate", "duplicate_of": "inc-00007"},
     {"id": "inc-00144", "reason": "invalid", "field": "environment", "value": "uat"}
@@ -267,55 +287,53 @@ Response:
 }
 ```
 
-The database FKs are a second safety net. The service check gives a clear per-incident reason instead of failing the batch.
+The foreign keys and the id `CHECK` are a second safety net; the service check gives a clear reason per incident instead of failing the batch.
 
-## Layering
+## Seed
 
-| Item | Layer |
-|------|-------|
-| `Incident`, `Environment`, `Severity` enums, `normalize()`, `fingerprint()`, `embedding_text()` | `app/core` (used by seed, ingest, search, database) |
-| `EmbeddingClient` protocol + OpenAI implementation (batch, timeout) | `app/support/llm/` |
-| SQL files `001_types.sql`, `002_tags.sql`, `003_incidents.sql`, `004_query_embeddings.sql`, `005_indexes.sql` | `app/support/database/sql/` (no SQL outside the database package) |
-| `SchemaRepository`, `IncidentRepository` | `app/support/database/` |
+```mermaid
+flowchart TD
+    START["cli seed"] --> LOAD["read data/service_catalog.json"]
+    LOAD --> SIZE{"events x SEED_REPEATS in 200-999<br/>and SEED_REPEATS in 1-16?"}
+    SIZE -- no --> STOP["stop with what to change, nothing dropped"]
+    SIZE -- yes --> GEN["generate incidents with random.Random(SEED)"]
+    GEN --> DROP["drop incident_tags, incidents, tags,<br/>service_types, severity_types, environment_types"]
+    DROP --> SCH["SchemaService.create"]
+    SCH --> TYP["fill type tables from fixed lists"]
+    TYP --> ING["IngestService.ingest: write, then embed"]
+    ING --> IDX["IVFFlat index with lists from embedded rows, ANALYZE"]
+```
 
-## Unit tests
-
-| Component | Tests |
-|-----------|-------|
-| `normalize` | `id` lowercased and trimmed; `INC-00001` and `inc-00001` are the same incident; codes and tags lowercase and trimmed; tags alphabetical and deduped; free text keeps its case |
-| `fingerprint` | spaces, case and punctuation changes give the same hash; tag order and duplicates ignored; null and empty properties ignored; any content change gives a new hash; `id`/`created_at` not included |
-| `embedding_text` | labels and field order fixed; empty fields left out; original case kept; same input = same text |
-| reproducibility | same query twice → one embedding call, same vector reused; every `ORDER BY` ends with `id`; tied scores return the same order; `total` not capped at 100 |
-| `query_builder` (hybrid) | filters applied to both branches; vector branch excludes `NULL` embeddings; similarity threshold; RRF order; empty `q` skips the vector branch; values always parameterized |
-| `SchemaService` | SQL files run in order; DDL only, no inserts, no drops; second run is a no-op (fake repo) |
-| `SeedService` | two runs with the same `SEED` give identical incidents; IDs follow sorted service order; `created_at` within the fixed bounds; every environment and severity value present; drops exactly the six app tables, nothing else; calls SchemaService after the drop; type tables filled from fixed lists only; same seed = same incidents; 200-500 rows; passes them to IngestService (fake) |
-| `IngestService` | never writes type tables; each row of the ingest rules table, including unknown environment, service and severity each counted as `invalid` with reason; text change clears the embedding, severity/tag change keeps it; OpenAI failure still saves incidents and reports `embedding_pending`; next call embeds the pending rows; rows already embedded are not sent again; model change marks rows pending; no body, `null` and `[]` each write nothing and embed pending rows (fake repo, fake embedder) |
-
-## Seed data rules
+The catalog is loaded, checked and turned into incidents before anything is dropped, so a bad catalog never leaves an empty database. The default 400 events × `SEED_REPEATS` 2 give 800 incidents; below 1,000 keeps the IVFFlat index at one list (exact search).
 
 | Rule | Value | Why |
 |------|-------|-----|
-| Random source | `random.Random(SEED)`, `SEED` env var, default `42`; never the global `random` | Take-home requires a fixed seed and repeatable results. A private generator is not affected by other code using `random`. |
-| Order | services sorted alphabetically, events in catalog order | Same input order + same seed = same output. Dict or file order can't change the result. |
-| IDs | `inc-00001` upward, in that order | Stable IDs, so `/incidents/{id}` examples in the README and tests always point to the same incident. |
-| Repeats | each catalog event becomes `SEED_REPEATS` incidents (default 2: 400 events → 800 incidents), copies next to each other | Real failures recur. Search and `/assist` see the same problem across environments, severities and dates. |
-| Combinations | each copy draws a different (environment, severity) pair, weighted by both weights, without replacement (16 pairs, so at most 16 repeats); `created_at` drawn per copy | Copies never share a content hash, so none is rejected as a duplicate. |
-| Size limit | incidents = events × repeats, must be 200-999 (`SEED_MIN_INCIDENTS`, `SEED_MAX_INCIDENTS`) | At least the take-home minimum; below 1,000 so the IVFFlat index stays at one list (exact search). Above 500 is a documented take-home deviation. |
-| `created_at` | uniform between 2026-01-01 00:00 and 2026-10-31 23:59 UTC, minute precision | Fixed bounds, not "now minus N days", so a seed run today and next week gives identical rows. Ten months gives realistic spread for date ordering. |
-| `environment` | dev 15%, qa 15%, stage 20%, prod 50% | Incident trackers are dominated by production issues; lower environments still appear so the `environment` filter has something to find in every value. |
-| `severity` | critical 10%, high 25%, medium 40%, low 25% | Real incident mix: critical outages are rare, most tickets are medium. Every value still has dozens of rows (~40 critical at 400), so severity filters return results. |
-| Choice method | per event: `repeats` weighted draws of a pair (without replacement), then per copy a `created_at` | Fixed draw order keeps results identical; changing the order would reshuffle everything. |
+| Random source | private `random.Random(SEED)`, default 42 | repeatable, unaffected by other code using `random` |
+| Order | services sorted, events in catalog order, copies next to each other | same input order + same seed = same output |
+| IDs | `inc-00001` upward in that order | stable IDs for README examples and tests |
+| Repeats | each event becomes `SEED_REPEATS` incidents | real failures recur across environments, severities and dates |
+| Combinations | each copy draws a different (environment, severity) pair, weighted by both weights, without replacement (16 pairs, so at most 16 repeats) | copies never share a content hash |
+| `created_at` | uniform minute between 2026-01-01 00:00 and 2026-10-31 23:59 UTC | fixed bounds, so a run next week gives identical rows |
+| `environment` weights | dev 15, qa 15, stage 20, prod 50 | production dominates real trackers; every value still has rows |
+| `severity` weights | critical 10, high 25, medium 40, low 25 | critical is rare, most tickets are medium |
 
-A unit test runs the seed twice and compares the output, and checks each value of environment and severity appears at least once.
+The drop is one statement: `DROP TABLE IF EXISTS incident_tags, incidents, tags, service_types, severity_types, environment_types CASCADE`. It never drops `query_embeddings`, the schema or the `vector` extension. It logs `seed: dropping app tables` with the host and database name, without asking. Incidents added through `POST /ingest` are lost on the next seed, so the seed is for setup and demo resets only.
 
-## Seed reset (the only destructive operation)
+## Errors at the database boundary
 
-`python -m app.cli seed` rebuilds the database from scratch:
+`support/database/errors.py` converts driver errors: `psycopg.OperationalError` (connection, pool, statement timeout) → 503 `unavailable` "database unavailable: ..."; any other `psycopg.Error` → 500 with the error class and PostgreSQL's primary message, never row data. The pool uses `sslmode=require`, a 10 s connect timeout and `statement_timeout` = `DB_STATEMENT_TIMEOUT_MS` (5000).
 
-1. Log `seed: dropping app tables on <host>/<db>` (no prompt).
-2. One transaction: `DROP TABLE IF EXISTS incident_tags, incidents, tags, service_types, severity_types, environment_types CASCADE`. Only these six names. Never `DROP SCHEMA`, never other tables, never the `vector` extension.
-3. `SchemaService.create()` recreates tables and indexes.
-4. Fill type tables, generate incidents (fixed seed), call `IngestService`, embed.
-5. Build the IVFFlat cosine index and run `ANALYZE incidents` (see Vector index).
+## Unit tests
 
-This also replaces the `incidents` table that already exists on RDS. Every seed run drops without asking. Incidents added later through `POST /ingest` are lost on the next seed, so seed is for setup and demo resets only. `SchemaService` and `IngestService` never drop anything.
+| Component | File | Checks |
+|-----------|------|--------|
+| `normalize` | `test_core_normalize.py` | ids, codes and tags lowercased and trimmed; tags sorted and deduped; free text keeps case |
+| `fingerprint` | `test_core_fingerprint.py` | formatting, tag order and duplicates ignored; id and dates ignored; any content change gives a new hash |
+| `embedding_text` | `test_core_embedding_text.py` | fixed labels and order; empty fields left out |
+| `query_builder` | `test_query_builder.py`, `test_query_builder_extra.py` | filters on both branches; vector branch skips `NULL`; threshold; RRF order; empty `q` skips the vector branch; offset paging; no user value in the SQL text |
+| `SearchService` | `test_search_service.py` | limit default and cap; stored query vector reused; branch limit covers the offset |
+| `plan_writes` | `test_ingest_plan.py` | each row of the ingest table; repeated id last wins; hash moved within a batch |
+| `IngestService` | `test_ingest_service.py` | invalid codes listed; text change clears the embedding, other changes keep it; OpenAI failure keeps incidents and reports pending; next call embeds them; empty body only embeds |
+| `SchemaService` | `test_schema_service.py` | DDL applied, no drops |
+| seed | `test_seed_generator.py`, `test_seed_service.py` | same seed gives identical incidents; distinct pairs per event; every value present; size check 200-999 before any drop; drop, schema, types, ingest, index in order; `lists` clamp |
+| properties | `test_properties.py` | Properties 1, 2, 3 and 9 with Hypothesis |

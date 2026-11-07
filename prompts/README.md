@@ -1,9 +1,9 @@
 # Langfuse prompts
 
-| Prompt | Current version in this folder | Change |
-|--------|--------------------------------|--------|
-| `incident-assist` | v2 | records arrive pre-screened by `incident-validation`; the prompt now judges relevance only |
-| `incident-validation` | v1 | new: screens search hits (same kind of problem) in batches of at most 15 |
+| Prompt | Langfuse version matching this folder | Latest change |
+|--------|---------------------------------------|---------------|
+| `incident-assist` | v4 | global `rank`, `group` and `group_reason` per relevant record; clustering rules: same root cause AND same fix |
+| `incident-validation` | v4 | valid only for the same failure type; a shared product area or generic word is not enough; the verdict must agree with the reason |
 | `incident-catalog` | v2 | as in Langfuse |
 
 The app reads prompts from Langfuse, not from these files. These files are the source copy to paste into Langfuse and to review in git.
@@ -40,4 +40,4 @@ The app reads prompts from Langfuse, not from these files. These files are the s
 
 ## Keeping schemas in sync
 
-The JSON schemas here must match the Pydantic output models (`AssistAnswer`, `CatalogBatch`). `python -m app.cli schemas` regenerates them from the models, and a unit test fails if these files and the models differ.
+The JSON schemas here must match the Pydantic output models (`ValidationAnswer`, `AssistAnswer`, `CatalogBatch`). `python -m app.cli schemas` regenerates them from the models, and a unit test fails if these files and the models differ.

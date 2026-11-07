@@ -119,7 +119,7 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 6. IF an incident's `environment`, `service` or `severity` is not in its Type_Table, THEN THE Ingest_Service SHALL skip it, count it as `invalid` and list the field and value.
 7. THE Ingest_Service SHALL compute a Content_Hash over service, environment, severity, title, description, resolution summary and tags, with free text normalized, null and empty properties removed and keys sorted, excluding `id` and dates.
 8. WHEN an incident is new, THE Ingest_Service SHALL count it as `ingested`; WHEN its `id` exists with the same Content_Hash, as `skipped`; WHEN its `id` exists with a different Content_Hash, as `updated`; WHEN its Content_Hash belongs to another `id`, as `duplicates` without storing it.
-9. WHEN the same body is sent twice, THE Ingest_Service SHALL create no duplicate incidents and leave the stored data unchanged.
+9. WHEN the same body is sent twice, THE Ingest_Service SHALL create no duplicate incidents and leave the stored incident content and embeddings unchanged.
 9a. WHEN an `id` repeats within one batch, THE Ingest_Service SHALL apply the items in order so the last version wins, and write that `id` once.
 10. THE Ingest_Service SHALL commit the written incidents before the embedding step, so that an embedding failure never removes saved incidents.
 11. THE Triage_API SHALL respond with `ingested`, `updated`, `skipped`, `duplicates`, `invalid`, `embedded`, `embedding_pending`, `embedding_error` and `rejected`.
@@ -143,14 +143,14 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 
 #### Acceptance Criteria
 
-1. THE Triage_API SHALL use one Langfuse text prompt per LLM call: `incident-assist` for Assist_Service and `incident-catalog` for Catalog_Service.
+1. THE Triage_API SHALL use one Langfuse text prompt per LLM call: `incident-validation` for the validation step, `incident-assist` for Assist_Service and `incident-catalog` for Catalog_Service.
 2. THE Triage_API SHALL take `model`, `reasoning`, `max_output_tokens` and `text.format` (strict JSON schema) from the prompt config.
 3. THE Triage_API SHALL fetch prompts with label = APP_ENV, type text and no cache.
 4. THE Triage_API SHALL set APP_ENV to the request's `environment` filter for `dev`, `qa` and `stage`, to `production` for `prod`, and to `production` when no filter is given; THE CLI SHALL use `production`.
 5. IF Langfuse is unreachable, the label is missing, the prompt is not a text prompt, or the config is invalid, THEN THE Triage_API SHALL return 503 explaining what to fix, without a fallback prompt.
 6. THE Triage_API SHALL call the OpenAI Responses API with the compiled prompt text and the config settings.
 7. IF the OpenAI key is missing or rejected, THEN THE Triage_API SHALL return 503; IF the call times out, THEN 504; IF the output does not match the output model, THEN 502 with the field errors.
-8. THE Triage_API SHALL parse every LLM output into its Pydantic output model (`AssistAnswer`, `CatalogBatch`), and IF the config schema name does not match the model, THEN return 503.
+8. THE Triage_API SHALL parse every LLM output into its Pydantic output model (`ValidationAnswer`, `AssistAnswer`, `CatalogBatch`), and IF the config schema name does not match the model, THEN return 503.
 9. THE Triage_API SHALL insert retrieved records into the prompt as JSON between `<incidents>` markers and instruct the model to treat them as data.
 
 ### Requirement 10: Search
@@ -206,14 +206,14 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 
 1. THE Triage_API SHALL take the Correlation_ID from `X-Correlation-ID` or generate one, and return it in the response header and in every error body.
 2. THE Triage_API SHALL record every request and CLI command as one Langfuse trace with trace ID derived from the Correlation_ID, environment APP_ENV and the Correlation_ID in metadata.
-3. THE Triage_API SHALL record service and support calls as nested Langfuse observations through Langfuse's `@observe`, LLM calls as generations and embedding calls as embeddings.
+3. THE Triage_API SHALL record the search, incident, catalog and assist steps as nested Langfuse observations through Langfuse's `@observe`, LLM calls as generations and embedding calls as embeddings; ingest, seed and schema work SHALL appear as log events and embedding observations under the root.
 4. THE Triage_API SHALL keep no trace store of its own.
 5. WHEN `GET /debug/trace/{correlation_id}` is called, THE Triage_API SHALL return the trace's observations as Langfuse returns them, plus the Langfuse URL; IF none exist yet, THEN 404 "retry shortly"; IF Langfuse is unreachable, THEN 503.
 6. THE Triage_API SHALL flush observations to Langfuse after each response and on shutdown.
 7. THE Triage_API SHALL write every log line to stdout as JSON with the Correlation_ID and observation ID, and WHILE an observation is active, SHALL also send the line to Langfuse as an event (except `DEBUG`).
 8. IF sending a log event to Langfuse fails, THEN THE Triage_API SHALL keep the stdout line and continue the request.
-9. WHEN `/assist` runs, THE Triage_API SHALL log `step tool:search input` (query, filters, n), `step tool:search output` (hit count, top IDs) and `step selected_ids`.
-10. THE Triage_API SHALL never record secrets in logs or traces and SHALL truncate recorded inputs.
+9. WHEN `/assist` runs, THE Triage_API SHALL log `step tool:search input` (query, filters, limit, offset), `step tool:search output` (hit count, top IDs), `step validation` (checked, valid IDs, target = n × 5) and `step selected_ids`; n is on the root observation input.
+10. THE Triage_API SHALL never record secrets in logs or traces, SHALL record embedding counts instead of vectors, and SHALL cut log-event metadata to 200 characters.
 11. THE Triage_API SHALL not use the legacy Langfuse ingestion endpoint or deprecated SDK calls.
 
 ### Requirement 14: Robustness

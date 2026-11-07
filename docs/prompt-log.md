@@ -191,3 +191,12 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   winner takes all. do what is best and inform the decission
   ```
 - Result: last version wins. Items apply in order and the id is written once. A re-run leaves rows and embeddings unchanged (no OpenAI call) but may count the repeated items as `updated`. Rejected: refusing repeated ids (stricter, but loses a valid "last write" use). Recorded in requirement 7.9a and design Property 3.
+
+**#18 Documentation with diagrams**
+- Tool: Kiro (chat, three sub-agents in parallel)
+- Goal: finish task 8 so the project can get a final review.
+- Prompt:
+  ```
+  do full task 8 so we can do a final revision, alwaus use mermaid daigram to explain our decisions to make sure they fully understand each cahnge and archtect approach. what will be missing is the prompt fine tuniing that we should after all docs are ready
+  ```
+- Result: one agent for live tests and Postman, one for the architecture docs, one for PROMPTS/AI-NOTES/TRADEOFFS; README and cleanup by the main agent. Every decision has a Mermaid diagram. The doc agent found spec lines that no longer matched the code (prompt list, step log fields, truncation wording); requirements were corrected. Prompt fine-tuning added as task 9.

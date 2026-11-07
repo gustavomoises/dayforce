@@ -155,25 +155,31 @@ flowchart LR
     - Found and fixed: 500 responses lost the correlation_id (handler runs outside `CorrelationMiddleware`)
     - _Requirements: 7.5, 7.7, 7.9, 4.5, 12.5, 12.7_
 
-- [ ] 8. Live tests, Postman and documentation
-  - [ ] 8.1 Live tests (`@pytest.mark.live`, `API_BASE_URL`): ingest twice, search, details, assist, catalog, debug trace
+- [x] 8. Live tests, Postman and documentation
+  - [x] 8.1 Live tests (`@pytest.mark.live`, `API_BASE_URL`): ingest twice, search, details, assist, catalog, debug trace
+    - `tests/live/test_live_api.py`: 10 tests, passed against EC2 in about 30 s
     - _Requirements: 15.3_
-  - [ ] 8.2 `postman_collection.json` with `{{base_url}}`
+  - [x] 8.2 `postman_collection.json` with `{{base_url}}`
     - _Requirements: 16.3_
-  - [ ] 8.3 Ask the owner about EC2 deployment steps, then write `README.md` (run steps, curl examples, tests)
+  - [x] 8.3 Write `README.md` (run steps, curl examples, tests); EC2 steps from the deployment done in task 6
     - _Requirements: 16.1_
-  - [ ] 8.4 Write `PROMPTS.md` from `docs/prompt-log.md`, `AI-NOTES.md` (at least 2 AI mistakes), `TRADEOFFS.md` (Requirement 17 deviations, known risks, next steps)
-    - `PROMPTS.md`: 5-10 prompts in the take-home template (adds "what you kept", "what you changed manually", follow-ups, commit links)
+  - [x] 8.4 Write `PROMPTS.md` from `docs/prompt-log.md`, `AI-NOTES.md` (at least 2 AI mistakes), `TRADEOFFS.md` (Requirement 17 deviations, known risks, next steps)
+    - `PROMPTS.md`: 10 prompts in the take-home template; `AI-NOTES.md`: 7 AI mistakes; Mermaid diagrams in all three
     - _Requirements: 16.2, 17.1-17.4_
-  - [ ] 8.5 Sync `architecture.md`, `trace-architecture.md` and `design.md` with the assist flow (validation, groups, grounding)
-  - [ ] 8.6 Remove the pre-task leftovers (owner approval): `src/dayforce_task`, `SETUP.md`, `docs/01-03`, Dayforce vars in `.env.example`, old README; write `.env.example` with the real settings
+  - [x] 8.5 Sync `architecture.md`, `trace-architecture.md`, `database-architecture.md` and `design.md` with the code (validation, groups, grounding, errors, last version wins), with a Mermaid diagram per decision
+  - [x] 8.6 Remove the pre-task leftovers (`src/dayforce_task`, `SETUP.md`, `docs/01-03`, `docs/README.md`); write `.env.example` with the real settings; ignore `.hypothesis/` and `.ruff_cache/`
+
+- [ ] 9. Prompt fine-tuning (after the docs)
+  - [ ] 9.1 Build a fixed question set with expected incident groups (clear match, reworded match, no match, filter-only, misleading shared word)
+  - [ ] 9.2 Run `incident-validation` and `incident-assist` on the set as Langfuse experiments; record precision, missed incidents, group quality, calls and latency per question
+  - [ ] 9.3 Change the prompts one rule at a time, compare versions on the same set, and move the `production` label only to a version that is better on the set
+  - [ ] 9.4 Copy the chosen versions to `prompts/`, update `prompts/README.md`, `PROMPTS.md` and `TRADEOFFS.md`
 
 ## Notes
 
 - Tasks 2, 3 and 4 never import each other. They share only `app/core`. The database stream uses a fake `EmbeddingClient` until task 4 is done.
 - Owner tasks: 3.6 and 6.11 (create prompts and labels in the Langfuse UI), 6.1 (deploy and start on EC2), and every `git pull` and restart on EC2. The agent cannot use AWS or Langfuse; it can call the public API on port 8000 and copy files with `scp`.
 - Unit tests are planned in task 7 and start only after task 6 passes, by owner decision.
-- Task 8.3 must ask the owner about EC2 deployment steps before writing the README.
 - Add prompts used during the build to `docs/prompt-log.md` as work progresses.
 - Anything not finished within the timebox goes to `TRADEOFFS.md`.
 - All code follows `.kiro/steering/code-standards.md`. Sub-agents running parallel streams receive the same standards in their instructions.
@@ -201,7 +207,11 @@ flowchart LR
     { "id": 15, "tasks": ["6.11", "6.12"] },
     { "id": 16, "tasks": ["7.0"] },
     { "id": 17, "tasks": ["7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7", "8.1", "8.2", "8.5", "8.6"] },
-    { "id": 18, "tasks": ["8.3", "8.4"] }
+    { "id": 18, "tasks": ["8.3", "8.4"] },
+    { "id": 19, "tasks": ["9.1"] },
+    { "id": 20, "tasks": ["9.2"] },
+    { "id": 21, "tasks": ["9.3"] },
+    { "id": 22, "tasks": ["9.4"] }
   ]
 }
 ```

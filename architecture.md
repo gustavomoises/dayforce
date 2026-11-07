@@ -236,7 +236,8 @@ The API and database use the take-home values `dev`, `qa`, `stage`, `prod` (the 
 
 | Prompt | Used by | Variables |
 |--------|---------|-----------|
-| `incident-assist` | AssistService | `question`, `filters`, `incidents` (retrieved records) |
+| `incident-validation` | CandidateScreener (before assist) | `question`, `filters`, `incidents` (one batch ≤ 15: id, title, snippet) |
+| `incident-assist` | AssistService | `question`, `filters`, `incidents` (valid records only) |
 | `incident-catalog` | CatalogService | `service`, `count` (= `events_per_service`) |
 
 Prompt `config` (validated by `LLMConfig` in `app/core/models/prompt.py`):

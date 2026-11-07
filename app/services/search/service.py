@@ -36,15 +36,18 @@ class SearchService:
         return self._run(filters, q, min(limit, self._settings.search_max_limit))
 
     @traced(name="tool:search")
-    def candidates(self, filters: SearchFilters, q: str, k: int) -> SearchResult:
-        """The top `k` incidents for /assist, through the same path as `search`."""
-        return self._run(filters, q, k)
+    def candidates(self, filters: SearchFilters, q: str, k: int, offset: int = 0) -> SearchResult:
+        """`k` incidents for /assist starting at `offset`, through the same path as `search`."""
+        return self._run(filters, q, k, offset)
 
-    def _run(self, filters: SearchFilters, q: str | None, limit: int) -> SearchResult:
+    def _run(
+        self, filters: SearchFilters, q: str | None, limit: int, offset: int = 0
+    ) -> SearchResult:
         text = normalize_query(q or "") or None
         filter_values = filters.model_dump(mode="json")
         logger.info(
-            "step tool:search input", extra={"q": text, "filters": filter_values, "limit": limit}
+            "step tool:search input",
+            extra={"q": text, "filters": filter_values, "limit": limit, "offset": offset},
         )
         page = self._repository.search(
             SearchQuery(
@@ -52,7 +55,9 @@ class SearchService:
                 text=text,
                 vector=self._query_vector(text) if text else None,
                 limit=limit,
-                branch_limit=self._settings.search_branch_limit,
+                offset=offset,
+                # Each branch must reach past the offset, or later pages would be empty.
+                branch_limit=max(self._settings.search_branch_limit, offset + limit),
                 min_similarity=self._settings.vector_min_similarity,
                 rrf_k=self._settings.rrf_k,
             )

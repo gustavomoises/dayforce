@@ -183,9 +183,12 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 
 #### Acceptance Criteria
 
-1. WHEN `POST /assist` is called with a `question`, optional filters and optional `candidate_multiplier` n, THE Assist_Service SHALL retrieve n × `ASSIST_MAX_RESULTS` Candidates (default n = 3, so 15) through the Search_Service.
+1. WHEN `POST /assist` is called with a `question`, optional filters and optional `candidate_multiplier` n, THE Assist_Service SHALL collect up to n × `ASSIST_MAX_RESULTS` valid Candidates (default n = 3, so 15) through the Search_Service and the validation step.
+1a. THE Assist_Service SHALL validate search hits with the Langfuse prompt `incident-validation` before fetching full records: each hit is `valid` true/false with a reason, where valid means it describes the same kind of problem as the question (same symptom, product area or failure type).
+1b. THE validation step SHALL send at most `VALIDATION_BATCH_SIZE` (15) hits per LLM call, most similar first; each next batch SHALL start after the hits already checked and be sized by the valid rate seen so far; it SHALL stop when enough hits are valid, search has no more hits, a whole batch is invalid, or `VALIDATION_MAX_BATCHES` (4) calls were made.
+1c. THE Assist_Service SHALL pass only valid Candidates to `incident-assist`, which then only judges relevance and ranks; the response SHALL include every validation verdict.
 2. IF n is outside 1-5 or the question is empty or too long, THEN THE Triage_API SHALL return 422.
-3. WHEN no Candidates are found, THE Assist_Service SHALL return `no_relevant_incidents` with `missing_info` without calling the LLM.
+3. WHEN no valid Candidates are found, THE Assist_Service SHALL return `no_relevant_incidents` with `missing_info` and the validation verdicts, without calling `incident-assist`.
 4. WHEN Candidates are found, THE Assist_Service SHALL make one LLM call and require, for every Candidate, `relevant` true or false with a `reason`, and for relevant Candidates a `rank` and `rank_justification`, plus `next_steps`, `customer_draft` and `missing_info`.
 5. IF the output misses a Candidate, repeats one, includes an unknown ID, gives a rank to a non-relevant Candidate, omits a rank for a relevant one, repeats or skips ranks, or has an empty reason, THEN THE Assist_Service SHALL reject the output with 502.
 6. WHEN no Candidate is relevant, THE Assist_Service SHALL return `no_relevant_incidents` with `missing_info`.

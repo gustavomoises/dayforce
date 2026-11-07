@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.services.assist.models.answer import CandidateAssessment
+from app.services.assist.models.validation import CandidateValidation
 
 
 class RelevantIncident(BaseModel):
@@ -27,4 +28,6 @@ class AssistResponse(BaseModel):
     next_steps: list[str]
     customer_draft: str
     missing_info: list[str]
+    # Every search hit checked by incident-validation, valid or not, with the reason.
+    validation: list[CandidateValidation] = []
     prompt_version: int | None = None

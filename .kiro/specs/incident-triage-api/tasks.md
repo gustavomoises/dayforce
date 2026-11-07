@@ -87,6 +87,9 @@ flowchart LR
     - _Requirements: 10.1-10.8, 11.1, 11.2_
   - [x] 5.2 Implement `CatalogService` (defaults, limits, one LLM call per service, exact count, save and get)
     - _Requirements: 5.1-5.6_
+  - [x] 5.7 Validation step before assist: `incident-validation` prompt and config, `ValidationAnswer` model, `CandidateScreener` (batches of at most 15, offset paging, rate-based batch size, stop rules), search `offset`, only valid incidents to assist, verdicts in the response
+    - Owner: create `incident-validation` in Langfuse with labels `dev`, `qa`, `stage`, `production`
+    - _Requirements: 12.1a, 12.1b, 12.1c, 12.3_
   - [x] 5.3 Implement `guardrails.validate` and `AssistService` (n × 5 candidates, full records, prompt, one LLM call, status, top 5 never padded, step logs)
     - _Requirements: 12.1-12.8, 13.9_
   - [x] 5.4 Implement `container.build_container`, `api/deps.py`, the FastAPI lifespan and the exception handler

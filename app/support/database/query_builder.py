@@ -74,6 +74,7 @@ def _params(query: SearchQuery) -> dict[str, Any]:
         "branch_limit": query.branch_limit,
         "rrf_k": query.rrf_k,
         "limit": query.limit,
+        "offset": query.offset,
         "snippet_chars": SNIPPET_CHARS,
     }
 
@@ -159,7 +160,7 @@ FROM fused
 JOIN filtered f ON f.id = fused.id
 LEFT JOIN fts ON fts.id = fused.id
 ORDER BY fused.score DESC, fused.id
-LIMIT %(limit)s"""
+LIMIT %(limit)s OFFSET %(offset)s"""
 
 
 def _listing_select() -> str:
@@ -167,4 +168,4 @@ def _listing_select() -> str:
     0.0::float8 AS score
 FROM filtered
 ORDER BY created_at DESC, id
-LIMIT %(limit)s"""
+LIMIT %(limit)s OFFSET %(offset)s"""

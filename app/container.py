@@ -7,6 +7,7 @@ from langfuse import Langfuse
 from psycopg_pool import ConnectionPool
 
 from app.core.settings import Settings
+from app.services.assist.screening import CandidateScreener
 from app.services.assist.service import AssistService
 from app.services.catalog.service import CatalogService
 from app.services.incidents.service import IncidentService
@@ -78,5 +79,7 @@ def build_container(settings: Settings) -> Container:
         search=search,
         incidents=incidents,
         catalog=CatalogService(prompts, llm, settings),
-        assist=AssistService(search, incidents, prompts, llm, settings),
+        assist=AssistService(
+            CandidateScreener(search, prompts, llm, settings), incidents, prompts, llm, settings
+        ),
     )

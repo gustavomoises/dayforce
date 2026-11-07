@@ -32,6 +32,8 @@ class Settings(BaseModel):
     assist_max_results: int = 5
     assist_default_multiplier: int = 3
     assist_max_multiplier: int = 5
+    validation_batch_size: int = 15
+    validation_max_batches: int = 4
     max_question_length: int = 2000
 
     ingest_max_items: int = 500

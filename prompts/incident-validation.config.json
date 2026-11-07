@@ -1,0 +1,32 @@
+{
+  "model": "gpt-6.1-terra",
+  "reasoning": { "effort": "low" },
+  "max_output_tokens": 3000,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "name": "validation_answer",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "valid": { "type": "boolean" },
+                "reason": { "type": "string" }
+              },
+              "required": ["id", "valid", "reason"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["candidates"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

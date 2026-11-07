@@ -5,6 +5,7 @@ The app reads prompts from Langfuse, not from these files. These files are the s
 | Langfuse prompt | Type | Text | Config |
 |-----------------|------|------|--------|
 | `incident-assist` | text | `incident-assist.txt` | `incident-assist.config.json` |
+| `incident-validation` | text | `incident-validation.txt` | `incident-validation.config.json` |
 | `incident-catalog` | text | `incident-catalog.txt` | `incident-catalog.config.json` |
 
 ## Create in Langfuse (us.cloud.langfuse.com)
@@ -21,12 +22,15 @@ The app reads prompts from Langfuse, not from these files. These files are the s
 | `incident-assist` | `question` | the user's question |
 | | `filters` | the filters as JSON, or `none` |
 | | `incidents` | retrieved records as a JSON array (`id`, `service`, `environment`, `severity`, `created_at`, `title`, `description`, `resolution_summary`, `tags`) |
+| `incident-validation` | `question` | the user's question |
+| | `filters` | the filters as JSON, or `none` |
+| | `incidents` | one search batch (at most 15) as a JSON array (`id`, `title`, `snippet`) |
 | `incident-catalog` | `service` | service name, for example `payroll-service` |
 | | `count` | events per service (default 20) |
 
 ## Model
 
-`gpt-6.1-terra`, reasoning effort `medium` (the model default). Structured outputs with strict JSON schema. No `temperature` (not set for reasoning models). `max_output_tokens` includes reasoning tokens, so it is set well above the expected answer size: 6000 for assist, 12000 for a 20-event catalog batch.
+`gpt-6.1-terra`, reasoning effort `medium` (the model default) for assist and catalog, `low` for validation (a yes/no screen per incident, so faster and cheaper). Structured outputs with strict JSON schema. No `temperature` (not set for reasoning models). `max_output_tokens` includes reasoning tokens, so it is set well above the expected answer size: 6000 for assist, 12000 for a 20-event catalog batch.
 
 ## Keeping schemas in sync
 

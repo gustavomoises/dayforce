@@ -14,6 +14,7 @@ from app.core.app_env import DEFAULT_APP_ENV
 from app.core.errors import AppError, ConfigurationError
 from app.core.settings import Settings
 from app.services.assist.models.answer import AssistAnswer
+from app.services.assist.models.validation import ValidationAnswer
 from app.services.catalog.models.batch import CatalogBatch
 from app.services.catalog.models.request import CatalogRequest
 from app.support.llm.schemas import schema_name, strict_json_schema
@@ -22,7 +23,7 @@ from app.support.tracing.correlation import new_correlation_id
 from app.support.tracing.endpoint import root_observation
 from app.support.tracing.logging import configure_logging
 
-OUTPUT_MODELS: tuple[type[BaseModel], ...] = (AssistAnswer, CatalogBatch)
+OUTPUT_MODELS: tuple[type[BaseModel], ...] = (AssistAnswer, ValidationAnswer, CatalogBatch)
 
 
 def _schema(container: Container, _: argparse.Namespace) -> Any:

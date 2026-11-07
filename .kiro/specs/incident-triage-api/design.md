@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Incident Triage API is a FastAPI application on EC2 (us-east-2) backed by RDS PostgreSQL with pgvector. Synthetic incidents are generated once by an LLM (catalog), turned into a reproducible dataset by a seeded generator, and written through a single ingest path that normalizes, validates, deduplicates and embeds them. Search is hybrid (full-text plus vectors) and is shared by `/search` and `/assist`. `/assist` sends candidates to an OpenAI model with a Langfuse-managed prompt and validates the structured output with guardrails. Langfuse owns prompts, traces and log events.
+The Incident Triage API is a FastAPI application on EC2 (us-east-2) backed by RDS PostgreSQL with pgvector. Synthetic incidents are generated once by an LLM (catalog), turned into a reproducible dataset by a seeded generator, and written through a single ingest path that normalizes, validates, deduplicates and embeds them. Search is hybrid (full-text plus vectors) and is shared by `/search` and `/assist`. `/assist` first screens search hits in batches of at most 15 with the `incident-validation` prompt (valid true/false), then sends only valid candidates to the `incident-assist` prompt, which judges relevance and ranks; guardrails validate both structured outputs. Langfuse owns prompts, traces and log events.
 
 Detailed designs: [architecture.md](../../../architecture.md), [database-architecture.md](../../../database-architecture.md), [trace-architecture.md](../../../trace-architecture.md), [prompts/](../../../prompts/README.md). Requirements: [requirements.md](requirements.md).
 
@@ -90,10 +90,13 @@ flowchart LR
 flowchart TD
     R["POST /assist"] --> V{"validate question, filters, n"}
     V -- invalid --> E422["422 with field errors"]
-    V -- ok --> S["SearchService.search: n x 5 candidates<br/>log step tool:search input / output"]
-    S --> H{"any candidates?"}
-    H -- no --> NR["no_relevant_incidents<br/>+ missing_info, no LLM call"]
-    H -- yes --> G["IncidentService.get_many: full records"]
+    V -- ok --> S["SearchService.candidates: next batch ≤ 15 most similar,<br/>offset = hits already checked"]
+    S --> VL["LLM incident-validation → valid true/false + reason per hit"]
+    VL --> EN{"valid ≥ n x 5, search empty,<br/>batch all invalid, or 4 calls?"}
+    EN -- no --> S
+    EN -- yes --> H{"any valid?"}
+    H -- no --> NR["no_relevant_incidents<br/>+ missing_info + verdicts, no assist call"]
+    H -- yes --> G["IncidentService.get_many: valid IDs only"]
     G --> P["Langfuse get_prompt incident-assist<br/>label = APP_ENV"]
     P -- unreachable / bad config --> E503["503 with what to fix"]
     P --> L["LLMClient.complete → AssistAnswer"]

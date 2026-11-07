@@ -14,6 +14,7 @@ class SearchQuery(BaseModel):
     text: str | None
     vector: list[float] | None
     limit: int
+    offset: int = 0
     branch_limit: int
     min_similarity: float
     rrf_k: int

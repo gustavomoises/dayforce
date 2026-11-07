@@ -1,4 +1,4 @@
-"""Grounded assist: search candidates, one LLM call, guardrails, top results never padded."""
+"""Grounded assist: validated candidates, one relevance call, guardrails, never padded."""
 
 import json
 import logging
@@ -12,8 +12,9 @@ from app.services.assist import guardrails
 from app.services.assist.models.answer import AssistAnswer, CandidateAssessment
 from app.services.assist.models.request import AssistRequest
 from app.services.assist.models.response import AssistResponse, RelevantIncident
+from app.services.assist.models.validation import CandidateValidation
+from app.services.assist.screening import CandidateScreener
 from app.services.incidents.service import IncidentService
-from app.services.search.service import SearchService
 from app.support.tracing.span import traced
 
 logger = logging.getLogger(__name__)
@@ -34,13 +35,13 @@ class AssistService:
 
     def __init__(
         self,
-        search: SearchService,
+        screener: CandidateScreener,
         incidents: IncidentService,
         prompts: PromptProvider,
         llm: LLMClient,
         settings: Settings,
     ) -> None:
-        self._search = search
+        self._screener = screener
         self._incidents = incidents
         self._prompts = prompts
         self._llm = llm
@@ -50,13 +51,13 @@ class AssistService:
     def assist(self, request: AssistRequest, label: str) -> AssistResponse:
         filters = request.filters()
         k = request.candidate_multiplier * self._settings.assist_max_results
-        hits = self._search.candidates(filters, request.question, k).results
+        hits, validation = self._screener.screen(request.question, filters, k, label)
         if not hits:
             logger.info(
                 "step selected_ids",
                 extra={"io": "output", "selected_ids": [], "relevant_count": 0},
             )
-            return _no_match()
+            return _no_match(validation)
         incidents = self._incidents.get_many([hit.id for hit in hits])
         prompt = self._prompts.get(
             PROMPT_NAME, _prompt_variables(request.question, filters, incidents), label
@@ -73,6 +74,7 @@ class AssistService:
             next_steps=answer.next_steps,
             customer_draft=answer.customer_draft,
             missing_info=answer.missing_info,
+            validation=validation,
             prompt_version=prompt.version,
         )
 
@@ -92,7 +94,8 @@ class AssistService:
         return selected
 
 
-def _no_match() -> AssistResponse:
+def _no_match(validation: list[CandidateValidation]) -> AssistResponse:
+    """No valid candidate: no assist call; the validation verdicts explain why."""
     return AssistResponse(
         status="no_relevant_incidents",
         relevant_incidents=[],
@@ -100,6 +103,7 @@ def _no_match() -> AssistResponse:
         next_steps=[],
         customer_draft="",
         missing_info=list(NO_MATCH_QUESTIONS),
+        validation=validation,
     )
 
 

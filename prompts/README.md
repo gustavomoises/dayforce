@@ -1,4 +1,10 @@
-# Langfuse prompts (version 1)
+# Langfuse prompts
+
+| Prompt | Current version in this folder | Change |
+|--------|--------------------------------|--------|
+| `incident-assist` | v2 | records arrive pre-screened by `incident-validation`; the prompt now judges relevance only |
+| `incident-validation` | v1 | new: screens search hits (same kind of problem) in batches of at most 15 |
+| `incident-catalog` | v2 | as in Langfuse |
 
 The app reads prompts from Langfuse, not from these files. These files are the source copy to paste into Langfuse and to review in git.
 

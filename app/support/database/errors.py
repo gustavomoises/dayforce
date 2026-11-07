@@ -14,6 +14,12 @@ def database_errors() -> Iterator[None]:
     try:
         yield
     except psycopg.OperationalError as exc:
-        raise Unavailable(f"database unavailable: {type(exc).__name__}") from exc
+        raise Unavailable(f"database unavailable: {_describe(exc)}") from exc
     except psycopg.Error as exc:
-        raise AppError(f"database error: {type(exc).__name__}") from exc
+        raise AppError(f"database error: {_describe(exc)}") from exc
+
+
+def _describe(exc: psycopg.Error) -> str:
+    """Error class plus PostgreSQL's primary message (names columns and tables, never data)."""
+    message = exc.diag.message_primary if exc.diag else None
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__

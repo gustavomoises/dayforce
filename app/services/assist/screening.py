@@ -87,25 +87,27 @@ class CandidateScreener:
     ) -> list[CandidateValidation]:
         prompt = self._prompts.get(PROMPT_NAME, _variables(question, filters, hits), label)
         answer = self._llm.complete(prompt, ValidationAnswer).output
-        check_coverage(answer, [hit.id for hit in hits])
-        return answer.candidates
+        return ground_verdicts(answer, [hit.id for hit in hits])
 
 
-def check_coverage(answer: ValidationAnswer, hit_ids: Sequence[str]) -> None:
-    """Every hit judged exactly once, no other ID, every reason non-empty."""
-    ids = [c.id for c in answer.candidates]
+def ground_verdicts(answer: ValidationAnswer, hit_ids: Sequence[str]) -> list[CandidateValidation]:
+    """Verdicts on the hits sent only: unknown IDs dropped; each hit judged once, with a reason."""
+    unknown = sorted({c.id for c in answer.candidates} - set(hit_ids))
+    if unknown:
+        logger.warning("step validation dropped", extra={"unknown_ids": unknown})
+    verdicts = [c for c in answer.candidates if c.id in set(hit_ids)]
+    ids = [c.id for c in verdicts]
     repeated = sorted(i for i, count in Counter(ids).items() if count > 1)
-    unknown = sorted(set(ids) - set(hit_ids))
     missing = [i for i in hit_ids if i not in set(ids)]
-    empty = [c.id for c in answer.candidates if not c.reason.strip()]
+    empty = [c.id for c in verdicts if not c.reason.strip()]
     for problem, values in (
         ("repeated", repeated),
-        ("unknown", unknown),
         ("missing", missing),
         ("without a reason", empty),
     ):
         if values:
             raise GroundingFailure(f"validation answer has {problem} candidates: {values}")
+    return verdicts
 
 
 def _variables(question: str, filters: SearchFilters, hits: Sequence[SearchHit]) -> dict[str, str]:

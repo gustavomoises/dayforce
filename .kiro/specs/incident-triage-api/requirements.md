@@ -191,9 +191,10 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 2. IF n is outside 1-5 or the question is empty or too long, THEN THE Triage_API SHALL return 422.
 3. WHEN no valid Candidates are found, THE Assist_Service SHALL return `no_relevant_incidents` with `missing_info` and the validation verdicts, without calling `incident-assist`.
 4. WHEN Candidates are found, THE Assist_Service SHALL make one LLM call and require, for every Candidate, `relevant` true or false with a `reason`, and for relevant Candidates a `rank` and `rank_justification`, plus `next_steps`, `customer_draft` and `missing_info`.
-5. IF the output misses a Candidate, repeats one, includes an unknown ID, gives a rank to a non-relevant Candidate, omits a rank for a relevant one, repeats or skips ranks, or has an empty reason, THEN THE Assist_Service SHALL reject the output with 502.
+5. THE Assist_Service SHALL never trust LLM output with real data: IDs not sent to the LLM (in validation or assist) SHALL be removed, next steps citing no incident or any ID that is not a kept relevant Candidate SHALL be removed, and ranks and groups SHALL be renumbered 1..k without gaps; titles, environments, severities and dates SHALL come from the database, never from the LLM.
+5a. IF the output misses a Candidate, repeats one, repeats a rank, gives a rank or group to a non-relevant Candidate, omits a rank, group or justification for a relevant one, or has an empty reason, THEN THE Assist_Service SHALL reject the output with 502.
 6. WHEN no Candidate is relevant, THE Assist_Service SHALL return `no_relevant_incidents` with `missing_info`.
-7. WHEN at least one Candidate is relevant, THE Assist_Service SHALL return `relevant_incidents` sorted by rank, at most 5, never padded, with the note "only N relevant incidents found" when N is 1 or 2, and SHALL also return the full Candidate list.
+7. WHEN at least one Candidate is relevant, THE Assist_Service SHALL return one entry per group sorted by rank, at most 5 groups, never padded, with the note "only N distinct problem(s) found" when N is 1 or 2, and SHALL also return the full grounded Candidate list.
 8. THE Assist_Service SHALL use only retrieved records, cite incident IDs in next steps, and keep incident IDs and promises out of the customer draft.
 
 ### Requirement 13: Observability

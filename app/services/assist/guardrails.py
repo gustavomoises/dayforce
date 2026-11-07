@@ -1,41 +1,58 @@
-"""Pure checks on the LLM's assist answer. Any violation rejects the whole answer."""
+"""Never trust the LLM with real data: keep only what matches the input, then check the rest.
 
+IDs the LLM was not given are removed, as are next steps citing them. Answers that are
+incomplete or inconsistent (a candidate missing or repeated, a relevant one without a rank)
+reject the whole answer.
+"""
+
+import logging
+import re
 from collections import Counter
 from collections.abc import Sequence
 
 from app.core.errors import GroundingFailure
+from app.core.models.incident import INCIDENT_ID_PATTERN
 from app.services.assist.models.answer import AssistAnswer, CandidateAssessment
 
+logger = logging.getLogger(__name__)
 
-def validate(
-    answer: AssistAnswer, candidate_ids: Sequence[str], max_groups: int
-) -> list[list[CandidateAssessment]]:
-    """Groups of relevant assessments, best group first, each sorted by rank; never padded.
+_CITED_ID = re.compile(INCIDENT_ID_PATTERN.strip("^$"))
 
-    The first member of each group is its most relevant record. At most `max_groups` groups.
-    """
-    _check_coverage([c.id for c in answer.candidates], candidate_ids)
-    for candidate in answer.candidates:
+
+def ground(answer: AssistAnswer, candidate_ids: Sequence[str]) -> AssistAnswer:
+    """The answer restricted to the input: unknown IDs dropped, ranks and groups renumbered."""
+    known = set(candidate_ids)
+    unknown = sorted({c.id for c in answer.candidates} - known)
+    candidates = [c for c in answer.candidates if c.id in known]
+    _check_coverage([c.id for c in candidates], candidate_ids)
+    for candidate in candidates:
         _check_assessment(candidate)
-    relevant = sorted((c for c in answer.candidates if c.relevant), key=lambda c: c.rank or 0)
-    _check_ranks([c.rank or 0 for c in relevant])
-    _check_groups([c.group or 0 for c in relevant])
-    if not relevant and not any(item.strip() for item in answer.missing_info):
+    candidates = _renumber(candidates)
+    relevant_ids = {c.id for c in candidates if c.relevant}
+    steps = [step for step in answer.next_steps if _cites_only(step, relevant_ids)]
+    if unknown or len(steps) < len(answer.next_steps):
+        logger.warning(
+            "step grounding dropped",
+            extra={"unknown_ids": unknown, "dropped_steps": len(answer.next_steps) - len(steps)},
+        )
+    if not relevant_ids and not any(item.strip() for item in answer.missing_info):
         raise GroundingFailure("no candidate is relevant, so missing_info must not be empty")
-    groups: dict[int, list[CandidateAssessment]] = {}
-    for candidate in relevant:
-        groups.setdefault(candidate.group or 0, []).append(candidate)
+    return answer.model_copy(update={"candidates": candidates, "next_steps": steps})
+
+
+def group(answer: AssistAnswer, max_groups: int) -> list[list[CandidateAssessment]]:
+    """Relevant assessments by group, best group first, each sorted by rank; never padded."""
+    groups: dict[int | None, list[CandidateAssessment]] = {}
+    for candidate in sorted((c for c in answer.candidates if c.relevant), key=_rank):
+        groups.setdefault(candidate.group, []).append(candidate)
     return list(groups.values())[:max_groups]
 
 
 def _check_coverage(answered_ids: Sequence[str], candidate_ids: Sequence[str]) -> None:
-    """Every retrieved ID exactly once, and no other ID."""
+    """Every retrieved ID judged exactly once."""
     repeated = sorted(i for i, count in Counter(answered_ids).items() if count > 1)
     if repeated:
         raise GroundingFailure(f"candidates repeated in the answer: {repeated}")
-    unknown = sorted(set(answered_ids) - set(candidate_ids))
-    if unknown:
-        raise GroundingFailure(f"unknown candidate ids in the answer: {unknown}")
     missing = [i for i in candidate_ids if i not in set(answered_ids)]
     if missing:
         raise GroundingFailure(f"candidates missing from the answer: {missing}")
@@ -62,18 +79,25 @@ def _check_assessment(candidate: CandidateAssessment) -> None:
         )
 
 
-def _check_ranks(ranks: Sequence[int]) -> None:
-    """Ranks of relevant candidates are 1..k with no gaps or repeats."""
-    expected = list(range(1, len(ranks) + 1))
-    if list(ranks) != expected:
-        raise GroundingFailure(f"ranks of relevant candidates must be {expected}, got {ranks}")
+def _renumber(candidates: Sequence[CandidateAssessment]) -> list[CandidateAssessment]:
+    """Ranks 1..k in rank order and groups 1..g by first appearance, so drops leave no gaps."""
+    relevant = sorted((c for c in candidates if c.relevant), key=_rank)
+    repeated = sorted(r for r, count in Counter(_rank(c) for c in relevant).items() if count > 1)
+    if repeated:
+        raise GroundingFailure(f"ranks repeated in the answer: {repeated}")
+    ranks = {c.id: n for n, c in enumerate(relevant, start=1)}
+    groups = {g: n for n, g in enumerate(dict.fromkeys(c.group for c in relevant), start=1)}
+    return [
+        c.model_copy(update={"rank": ranks[c.id], "group": groups[c.group]}) if c.relevant else c
+        for c in candidates
+    ]
 
 
-def _check_groups(groups_by_rank: Sequence[int]) -> None:
-    """Groups are numbered 1, 2, 3 ... in the order their best-ranked record appears."""
-    first_seen = list(dict.fromkeys(groups_by_rank))
-    expected = list(range(1, len(first_seen) + 1))
-    if first_seen != expected:
-        raise GroundingFailure(
-            f"groups must be numbered {expected} in rank order, got {first_seen}"
-        )
+def _cites_only(step: str, relevant_ids: set[str]) -> bool:
+    """A next step must cite at least one incident, and only relevant ones."""
+    cited = set(_CITED_ID.findall(step))
+    return bool(cited) and cited <= relevant_ids
+
+
+def _rank(candidate: CandidateAssessment) -> int:
+    return candidate.rank or 0

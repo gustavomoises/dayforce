@@ -154,3 +154,12 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   add clustering group rules
   ```
 - Result: `incident-assist` adds `group_reason` per relevant candidate and clustering rules (same root cause AND same fix; a shared symptom is not enough; environment, severity or date differences do not split a group; when unsure, keep separate). The lead now shows environment, severity and created_at; the note counts distinct problems.
+
+**#14 Never trust the LLM with real data**
+- Tool: Kiro (chat)
+- Goal: make sure every incident in the response exists in what was sent to the LLM.
+- Prompt:
+  ```
+  after the response from LLM you check if the incident exists based on the most similar call? never trust LLM with real data always check the output based on the input. if it doesn't exist remove this from the response
+  ```
+- Result: unknown IDs used to reject the whole answer (502). Now `guardrails.ground` and `screening.ground_verdicts` remove IDs not sent to the LLM, drop next steps citing no incident or a non-relevant/unknown one, and renumber ranks and groups. Titles, environment, severity and dates already came from the database.

@@ -66,8 +66,8 @@ class AssistService:
         prompt = self._prompts.get(
             PROMPT_NAME, _prompt_variables(request.question, filters, incidents), label
         )
-        answer = self._llm.complete(prompt, AssistAnswer).output
-        groups = self._select(answer, [incident.id for incident in incidents])
+        raw = self._llm.complete(prompt, AssistAnswer).output
+        answer, groups = self._select(raw, [incident.id for incident in incidents])
         by_id = {incident.id: incident for incident in incidents}
         relevant = [_relevant_incident(group, by_id) for group in groups]
         return AssistResponse(
@@ -85,8 +85,10 @@ class AssistService:
     @traced(name="guardrails")
     def _select(
         self, answer: AssistAnswer, candidate_ids: Sequence[str]
-    ) -> list[list[CandidateAssessment]]:
-        groups = guardrails.validate(answer, candidate_ids, self._settings.assist_max_results)
+    ) -> tuple[AssistAnswer, list[list[CandidateAssessment]]]:
+        """Ground the answer in the incidents sent, then group what is left."""
+        answer = guardrails.ground(answer, candidate_ids)
+        groups = guardrails.group(answer, self._settings.assist_max_results)
         logger.info(
             "step selected_ids",
             extra={
@@ -96,7 +98,7 @@ class AssistService:
                 "relevant_count": sum(c.relevant for c in answer.candidates),
             },
         )
-        return groups
+        return answer, groups
 
 
 def _no_match(validation: list[CandidateValidation]) -> AssistResponse:

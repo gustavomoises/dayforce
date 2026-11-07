@@ -104,7 +104,7 @@ flowchart LR
   - [x] 5.6 Implement `app/cli.py`: `schema`, `catalog`, `seed`, `schemas`
     - _Requirements: 1.5_
 
-- [ ] 6. End-to-end run on EC2 (checkpoint: structure works)
+- [x] 6. End-to-end run on EC2 (checkpoint: structure works)
   - [x] 6.1 Deploy to EC2, install dependencies, start uvicorn (owner)
     - _Requirements: 1.1, 1.2_
   - [x] 6.2 Run `cli catalog` (400 events) and `cli seed` (800 ingested and embedded, lists = 1) on EC2

@@ -20,9 +20,9 @@
                 "reason": { "type": "string" },
                 "rank": { "type": ["integer", "null"] },
                 "rank_justification": { "type": ["string", "null"] },
-                "related_to": { "type": ["string", "null"] }
+                "group": { "type": ["integer", "null"] }
               },
-              "required": ["id", "relevant", "reason", "rank", "rank_justification", "related_to"],
+              "required": ["id", "relevant", "reason", "rank", "rank_justification", "group"],
               "additionalProperties": false
             }
           },

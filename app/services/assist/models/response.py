@@ -11,8 +11,9 @@ from app.services.assist.models.validation import CandidateValidation
 
 
 class RelatedIncident(BaseModel):
-    """A relevant incident the LLM grouped under a ranked one, with why it is related."""
+    """Another relevant incident in the same group, with its own rank and reason."""
 
+    rank: int
     id: str
     title: str
     reason: str
@@ -22,8 +23,9 @@ class RelatedIncident(BaseModel):
 
 
 class RelevantIncident(BaseModel):
-    """A ranked relevant incident, in rank order, with the incidents related to it."""
+    """The most relevant incident of a group, with the other incidents of that group."""
 
+    group: int
     rank: int
     id: str
     title: str

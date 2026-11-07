@@ -8,30 +8,24 @@ from app.services.assist.models.answer import AssistAnswer, CandidateAssessment
 
 
 def validate(
-    answer: AssistAnswer, candidate_ids: Sequence[str], max_results: int
-) -> list[CandidateAssessment]:
-    """Ranked relevant assessments sorted by rank, at most `max_results`, never padded."""
+    answer: AssistAnswer, candidate_ids: Sequence[str], max_groups: int
+) -> list[list[CandidateAssessment]]:
+    """Groups of relevant assessments, best group first, each sorted by rank; never padded.
+
+    The first member of each group is its most relevant record. At most `max_groups` groups.
+    """
     _check_coverage([c.id for c in answer.candidates], candidate_ids)
     for candidate in answer.candidates:
         _check_assessment(candidate)
-    ranked = sorted(
-        (c for c in answer.candidates if c.relevant and c.related_to is None),
-        key=lambda c: c.rank or 0,
-    )
-    _check_ranks([c.rank or 0 for c in ranked])
-    _check_related_targets(answer.candidates, {c.id for c in ranked})
-    if not ranked and not any(item.strip() for item in answer.missing_info):
+    relevant = sorted((c for c in answer.candidates if c.relevant), key=lambda c: c.rank or 0)
+    _check_ranks([c.rank or 0 for c in relevant])
+    _check_groups([c.group or 0 for c in relevant])
+    if not relevant and not any(item.strip() for item in answer.missing_info):
         raise GroundingFailure("no candidate is relevant, so missing_info must not be empty")
-    return ranked[:max_results]
-
-
-def related_by_ranked(answer: AssistAnswer) -> dict[str, list[CandidateAssessment]]:
-    """For each ranked id, the relevant candidates the LLM attached to it, in answer order."""
-    related: dict[str, list[CandidateAssessment]] = {}
-    for candidate in answer.candidates:
-        if candidate.relevant and candidate.related_to is not None:
-            related.setdefault(candidate.related_to, []).append(candidate)
-    return related
+    groups: dict[int, list[CandidateAssessment]] = {}
+    for candidate in relevant:
+        groups.setdefault(candidate.group or 0, []).append(candidate)
+    return list(groups.values())[:max_groups]
 
 
 def _check_coverage(answered_ids: Sequence[str], candidate_ids: Sequence[str]) -> None:
@@ -50,36 +44,34 @@ def _check_coverage(answered_ids: Sequence[str], candidate_ids: Sequence[str]) -
 def _check_assessment(candidate: CandidateAssessment) -> None:
     if not candidate.reason.strip():
         raise GroundingFailure(f"candidate {candidate.id} has an empty reason")
-    has_rank = candidate.rank is not None or candidate.rank_justification is not None
-    if not candidate.relevant:
-        if has_rank or candidate.related_to is not None:
-            raise GroundingFailure(
-                f"candidate {candidate.id} is not relevant, so rank, rank_justification "
-                "and related_to must be null"
-            )
-    elif candidate.related_to is not None:
-        if has_rank:
-            raise GroundingFailure(
-                f"candidate {candidate.id} is related to {candidate.related_to}, "
-                "so rank and rank_justification must be null"
-            )
-    elif candidate.rank is None or not (candidate.rank_justification or "").strip():
+    justified = bool(candidate.rank_justification and candidate.rank_justification.strip())
+    if candidate.relevant and (candidate.rank is None or candidate.group is None or not justified):
         raise GroundingFailure(
-            f"ranked candidate {candidate.id} needs a rank and a rank_justification"
+            f"relevant candidate {candidate.id} needs a rank, a rank_justification and a group"
+        )
+    if not candidate.relevant and (
+        candidate.rank is not None
+        or candidate.rank_justification is not None
+        or candidate.group is not None
+    ):
+        raise GroundingFailure(
+            f"candidate {candidate.id} is not relevant, "
+            "so rank, rank_justification and group must be null"
         )
 
 
 def _check_ranks(ranks: Sequence[int]) -> None:
-    """Ranks of ranked candidates are 1..k with no gaps or repeats."""
+    """Ranks of relevant candidates are 1..k with no gaps or repeats."""
     expected = list(range(1, len(ranks) + 1))
     if list(ranks) != expected:
         raise GroundingFailure(f"ranks of relevant candidates must be {expected}, got {ranks}")
 
 
-def _check_related_targets(candidates: Sequence[CandidateAssessment], ranked_ids: set[str]) -> None:
-    """`related_to` must point at a ranked candidate, never at itself or a related one."""
-    bad = sorted(
-        c.id for c in candidates if c.related_to is not None and c.related_to not in ranked_ids
-    )
-    if bad:
-        raise GroundingFailure(f"related_to must name a ranked candidate: {bad}")
+def _check_groups(groups_by_rank: Sequence[int]) -> None:
+    """Groups are numbered 1, 2, 3 ... in the order their best-ranked record appears."""
+    first_seen = list(dict.fromkeys(groups_by_rank))
+    expected = list(range(1, len(first_seen) + 1))
+    if first_seen != expected:
+        raise GroundingFailure(
+            f"groups must be numbered {expected} in rank order, got {first_seen}"
+        )

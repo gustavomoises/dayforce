@@ -67,10 +67,9 @@ class AssistService:
             PROMPT_NAME, _prompt_variables(request.question, filters, incidents), label
         )
         answer = self._llm.complete(prompt, AssistAnswer).output
-        selected = self._select(answer, [incident.id for incident in incidents])
+        groups = self._select(answer, [incident.id for incident in incidents])
         by_id = {incident.id: incident for incident in incidents}
-        related = guardrails.related_by_ranked(answer)
-        relevant = [_relevant_incident(c, by_id, related.get(c.id, [])) for c in selected]
+        relevant = [_relevant_incident(group, by_id) for group in groups]
         return AssistResponse(
             status="answered" if relevant else "no_relevant_incidents",
             relevant_incidents=relevant,
@@ -86,21 +85,18 @@ class AssistService:
     @traced(name="guardrails")
     def _select(
         self, answer: AssistAnswer, candidate_ids: Sequence[str]
-    ) -> list[CandidateAssessment]:
-        selected = guardrails.validate(answer, candidate_ids, self._settings.assist_max_results)
+    ) -> list[list[CandidateAssessment]]:
+        groups = guardrails.validate(answer, candidate_ids, self._settings.assist_max_results)
         logger.info(
             "step selected_ids",
             extra={
                 "io": "output",
-                "selected_ids": [c.id for c in selected],
-                "related": {
-                    ranked: [c.id for c in group]
-                    for ranked, group in guardrails.related_by_ranked(answer).items()
-                },
+                "selected_ids": [group[0].id for group in groups],
+                "groups": {group[0].group: [c.id for c in group] for group in groups},
                 "relevant_count": sum(c.relevant for c in answer.candidates),
             },
         )
-        return selected
+        return groups
 
 
 def _no_match(validation: list[CandidateValidation]) -> AssistResponse:
@@ -150,22 +146,24 @@ def _incident_record(incident: Incident) -> dict[str, object]:
 
 
 def _relevant_incident(
-    candidate: CandidateAssessment,
-    by_id: dict[str, Incident],
-    related: Sequence[CandidateAssessment],
+    group: Sequence[CandidateAssessment], by_id: dict[str, Incident]
 ) -> RelevantIncident:
+    """The group's best-ranked incident, with the rest of the group as `related`."""
+    lead, *rest = group
     return RelevantIncident(
-        rank=candidate.rank,
-        id=candidate.id,
-        title=by_id[candidate.id].title,
-        reason=candidate.reason,
-        rank_justification=candidate.rank_justification,
-        related=[_related_incident(r, by_id[r.id]) for r in related],
+        group=lead.group,
+        rank=lead.rank,
+        id=lead.id,
+        title=by_id[lead.id].title,
+        reason=lead.reason,
+        rank_justification=lead.rank_justification,
+        related=[_related_incident(c, by_id[c.id]) for c in rest],
     )
 
 
 def _related_incident(candidate: CandidateAssessment, incident: Incident) -> RelatedIncident:
     return RelatedIncident(
+        rank=candidate.rank,
         id=incident.id,
         title=incident.title,
         reason=candidate.reason,

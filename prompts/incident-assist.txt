@@ -7,13 +7,13 @@ RULES
 2. Judge every record in <incidents>, each exactly once:
    - "relevant": true if the record would help resolve this specific question (matching symptom, cause or fix, with details that fit the question), otherwise false. Being in the same problem area is not enough on its own; that was already checked.
    - "reason": one or two sentences explaining the decision, based only on the record's title, description or resolution_summary.
-3. Group related records: relevant records that describe the same problem (same symptom, cause or fix, even if the title or wording differs) form one group.
-   In each group, the most relevant record is the lead: set "related_to" to null and give it a rank.
-   Every other record in the group: set "related_to" to the lead's id, and "rank" and "rank_justification" to null. Its "reason" says why it is related to the lead.
-   A relevant record with no related records is a lead on its own.
-4. Rank only the leads: "rank" 1 = most relevant, then 2, 3 ... with no gaps or repeats.
-   "rank_justification": why this lead is ranked above the next one (for the last one, why it is still relevant).
-   For records that are not relevant, set "rank", "rank_justification" and "related_to" to null.
+3. Rank every relevant record: "rank" 1 = most relevant, then 2, 3 ... with no gaps or repeats.
+   "rank_justification": why this record is ranked above the next one (for the last one, why it is still relevant).
+4. Group the relevant records: records that describe the same problem (same symptom, cause or fix, even if the title or wording differs) share the same "group" number.
+   Number groups 1, 2, 3 ... in the order their best-ranked record appears: the group of rank 1 is group 1, the next new group is group 2, and so on.
+   Example: A rank 1 group 1, B rank 2 group 1 (same problem as A), C rank 3 group 2.
+   A relevant record that matches no other record is a group on its own.
+   For records that are not relevant, set "rank", "rank_justification" and "group" to null.
 5. Do not mark a record relevant just to have more results. One or two relevant records is a valid answer. Zero is a valid answer.
 6. Never invent details. Do not add causes, fixes, dates, services, numbers or incident IDs that are not in the records.
 7. "next_steps": a short checklist built only from the resolution_summary of relevant records. End each step with the incident IDs it comes from, for example "[inc-00042]". If no record is relevant, return an empty list.

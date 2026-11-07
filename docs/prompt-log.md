@@ -135,3 +135,12 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   groups don't have to have the same title, they should be related if the llm says incidents are related; use the most relevant as first one and say these are related incidents of this relevant ticket
   ```
 - Result: `incident-assist` v3 adds `related_to` per candidate. The lead of each group is ranked; the others point to it and are returned under `related` with their reason. Text-hash clustering removed; guardrails check `related_to` names a ranked candidate.
+
+**#12 Rank plus group per relevant incident**
+- Tool: Kiro (chat)
+- Goal: cluster related incidents to avoid repetition, keeping one global relevance order.
+- Prompt:
+  ```
+  let's see if you got ticket A group1 relevance 1, ticketB group 1 relevance 2, ticket C group 2 relevance 3
+  ```
+- Result: `incident-assist` v4 gives each relevant candidate a global `rank` and a `group` (numbered by first appearance in rank order), replacing `related_to`. The response has one entry per group led by its best-ranked incident, with the other members under `related` with their own rank; top 5 counts groups.

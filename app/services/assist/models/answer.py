@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict
 class CandidateAssessment(BaseModel):
     """The LLM's verdict on one retrieved incident.
 
-    A relevant record is either ranked (`related_to` null) or attached to the ranked record it
-    is related to (`related_to` = that record's id, `rank` null).
+    Relevant records get a rank across all relevant records and a group: records in the same
+    group describe the same problem. Not relevant records have all three set to null.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -19,7 +19,7 @@ class CandidateAssessment(BaseModel):
     reason: str
     rank: int | None
     rank_justification: str | None
-    related_to: str | None
+    group: int | None
 
 
 class AssistAnswer(BaseModel):

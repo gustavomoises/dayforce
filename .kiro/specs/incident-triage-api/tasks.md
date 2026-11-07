@@ -109,7 +109,7 @@ flowchart LR
     - _Requirements: 1.1, 1.2_
   - [x] 6.2 Run `cli catalog` (400 events) and `cli seed` (800 ingested and embedded, lists = 1) on EC2
     - _Requirements: 5.1, 6.1_
-  - [ ] 6.3 Copy `data/service_catalog.json` from EC2 and commit it
+  - [x] 6.3 Copy `data/service_catalog.json` from EC2 and commit it
     - Without it the dataset is not repeatable
     - _Requirements: 5.1, 6.1_
   - [x] 6.4 Check `/health`, `/search`, `/assist` (validation) and `/debug/trace` with curl, plus the trace and log events in Langfuse

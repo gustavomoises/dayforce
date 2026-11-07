@@ -29,6 +29,7 @@ JOIN environment_types e ON e.id = i.environment_id
 JOIN service_types s ON s.id = i.service_id
 JOIN severity_types v ON v.id = i.severity_id
 WHERE i.id = ANY(%s)"""
+SET_PROBES = "SELECT set_config('ivfflat.probes', %s, true)"
 SELECT_QUERY_EMBEDDING = "SELECT embedding FROM query_embeddings WHERE query_hash = %s"
 INSERT_QUERY_EMBEDDING = """INSERT INTO query_embeddings (query_hash, model, embedding)
 VALUES (%s, %s, %s)
@@ -38,8 +39,9 @@ ON CONFLICT (query_hash) DO NOTHING"""
 class PostgresIncidentRepository:
     """IncidentRepository backed by one shared connection pool."""
 
-    def __init__(self, pool: ConnectionPool) -> None:
+    def __init__(self, pool: ConnectionPool, ivfflat_probes: int) -> None:
         self._pool = pool
+        self._probes = ivfflat_probes
 
     @contextmanager
     def unit_of_work(self) -> Iterator[PostgresUnitOfWork]:
@@ -50,6 +52,8 @@ class PostgresIncidentRepository:
     def search(self, query: SearchQuery) -> SearchPage:
         hits_query, count_query = build_search(query), build_count(query)
         with database_errors(), self._pool.connection() as conn:
+            # Local to this transaction; probes >= lists keeps IVFFlat results exact.
+            conn.execute(SET_PROBES, (str(self._probes),))
             with conn.cursor(row_factory=dict_row) as cur:
                 hits = [SearchHit(**row) for row in cur.execute(hits_query.sql, hits_query.params)]
             row = conn.execute(count_query.sql, count_query.params).fetchone()

@@ -82,6 +82,12 @@ class SchemaRepository(Protocol):
 
     def drop_incident_tables(self) -> None: ...
 
+    def create_vector_index(self, lists: int) -> None:
+        """(Re)build the IVFFlat cosine index, then ANALYZE."""
+        ...
+
+    def count_embedded(self) -> int: ...
+
     def upsert_types(
         self,
         environments: Sequence[str],

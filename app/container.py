@@ -55,7 +55,7 @@ def build_container(settings: Settings) -> Container:
     pool = create_pool(secrets.database, settings)
     client = create_openai(secrets, settings)
 
-    repository = PostgresIncidentRepository(pool)
+    repository = PostgresIncidentRepository(pool, settings.ivfflat_probes)
     schema_repository = PostgresSchemaRepository(pool)
     prompts = LangfusePromptProvider(langfuse)
     llm = OpenAIClient(client, settings)

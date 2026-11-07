@@ -1,4 +1,4 @@
--- No vector index: an exact scan is fast at this size and stays correct with filters.
+-- The IVFFlat vector index is built by the seed after the rows exist (it learns from them).
 CREATE INDEX IF NOT EXISTS incidents_search_vector_idx ON incidents USING gin (search_vector);
 CREATE INDEX IF NOT EXISTS incidents_filters_idx
     ON incidents (environment_id, service_id, severity_id);

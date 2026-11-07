@@ -25,6 +25,9 @@ class Settings(BaseModel):
     search_max_limit: int = 50
     search_branch_limit: int = 50
     rrf_k: int = 60
+    ivfflat_rows_per_list: int = 1000
+    ivfflat_max_lists: int = 10
+    ivfflat_probes: int = 10
 
     assist_max_results: int = 5
     assist_default_multiplier: int = 3

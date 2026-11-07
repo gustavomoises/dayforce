@@ -18,6 +18,14 @@ DROP_INCIDENT_TABLES = (
     "DROP TABLE IF EXISTS incident_tags, incidents, tags, "
     "service_types, severity_types, environment_types CASCADE"
 )
+VECTOR_INDEX = "incidents_embedding_ivfflat"
+COUNT_EMBEDDED = "SELECT count(*) FROM incidents WHERE embedding IS NOT NULL"
+DROP_VECTOR_INDEX = f"DROP INDEX IF EXISTS {VECTOR_INDEX}"
+# lists is an int computed in code; CREATE INDEX options cannot be bound as parameters.
+CREATE_VECTOR_INDEX = (
+    f"CREATE INDEX {VECTOR_INDEX} ON incidents "
+    "USING ivfflat (embedding vector_cosine_ops) WITH (lists = {lists})"
+)
 INSERT_ENVIRONMENT = (
     "INSERT INTO environment_types (code) VALUES (%s) ON CONFLICT (code) DO NOTHING"
 )
@@ -49,6 +57,20 @@ class PostgresSchemaRepository:
                 extra={"host": conn.info.host, "dbname": conn.info.dbname},
             )
             conn.execute(DROP_INCIDENT_TABLES)
+
+    def count_embedded(self) -> int:
+        with database_errors(), self._pool.connection() as conn:
+            row = conn.execute(COUNT_EMBEDDED).fetchone()
+        return row[0] if row else 0
+
+    def create_vector_index(self, lists: int) -> None:
+        if lists < 1:
+            raise ValueError("lists must be at least 1")
+        with database_errors(), self._pool.connection() as conn:
+            conn.execute(DROP_VECTOR_INDEX)
+            conn.execute(CREATE_VECTOR_INDEX.format(lists=int(lists)))
+            conn.execute("ANALYZE incidents")
+        logger.info("vector index built", extra={"index": VECTOR_INDEX, "lists": lists})
 
     def upsert_types(
         self,

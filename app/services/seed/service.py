@@ -22,6 +22,12 @@ MIN_EVENTS = 200
 MAX_EVENTS = 500
 
 
+def ivfflat_lists(embedded_rows: int, settings: Settings) -> int:
+    """pgvector guidance rows/1000, at least 1, capped so probes (>= lists) stay exact."""
+    lists = embedded_rows // settings.ivfflat_rows_per_list
+    return max(1, min(lists, settings.ivfflat_max_lists))
+
+
 class SeedService:
     """The only destructive operation. CLI only, no confirmation."""
 
@@ -48,7 +54,15 @@ class SeedService:
             services=sorted(catalog.root),
         )
         logger.info("seed generated incidents", extra={"count": len(incidents)})
-        return self._ingest_service.ingest(incidents)
+        result = self._ingest_service.ingest(incidents)
+        self._build_vector_index()
+        return result
+
+    def _build_vector_index(self) -> None:
+        """Last step: IVFFlat learns its lists from the rows present when it is built."""
+        rows = self._schema_repository.count_embedded()
+        lists = ivfflat_lists(rows, self._settings)
+        self._schema_repository.create_vector_index(lists)
 
     def _load_catalog(self) -> Catalog:
         path = Path(self._settings.catalog_path)

@@ -101,6 +101,8 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 3. THE Seed_Service SHALL generate incidents with a private `random.Random(SEED)`, services in alphabetical order, IDs in that order, `created_at` uniform between 2026-01-01 and 2026-10-31 UTC, environment weights dev 15 / qa 15 / stage 20 / prod 50 and severity weights critical 10 / high 25 / medium 40 / low 25.
 4. WHEN `cli seed` is run twice with the same Catalog and `SEED`, THE Seed_Service SHALL produce identical incidents.
 5. IF the Catalog holds fewer than 200 or more than 500 events, THEN THE Seed_Service SHALL stop with a message explaining how to regenerate the Catalog.
+6. WHEN the seed has ingested and embedded the incidents, THE Seed_Service SHALL create an IVFFlat index on `incidents.embedding` with `vector_cosine_ops`, with `lists` = embedded rows / 1000, at least 1 and at most `IVFFLAT_MAX_LISTS` (10), and then run `ANALYZE incidents`.
+7. THE Seed_Service SHALL build the IVFFlat index only after the rows exist, because IVFFlat learns its lists from the data present at creation.
 
 ### Requirement 7: Ingest
 
@@ -163,6 +165,7 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 6. WHEN the same request is repeated on the same data, THE Search_Service SHALL return the same `total`, IDs and order, by ending every sort with `id`, rounding similarity to 6 decimals and reusing stored query embeddings.
 7. IF a filter value is invalid, THEN THE Triage_API SHALL return 422.
 8. IF the query embedding call fails, THEN THE Triage_API SHALL return 503 without falling back to text-only search.
+9. WHEN a search runs the vector branch, THE Search_Service SHALL order by cosine distance (`<=>`) with a `LIMIT` so the IVFFlat index can be used, and SHALL set `ivfflat.probes` to `IVFFLAT_PROBES` (10) for that transaction; because probes ≥ lists, results are exact and reproducible.
 
 ### Requirement 11: Incident details
 

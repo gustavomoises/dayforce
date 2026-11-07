@@ -13,6 +13,10 @@ SNIPPET_CHARS = 200
 
 _TSQUERY = "websearch_to_tsquery('english', %(text)s)"
 _SIMILARITY = "round((1 - (embedding <=> %(vector)s))::numeric, 6)"
+_INCIDENTS_WITH_TYPES = """FROM incidents i
+    JOIN environment_types e ON e.id = i.environment_id
+    JOIN service_types s ON s.id = i.service_id
+    JOIN severity_types v ON v.id = i.severity_id"""
 _TAGS_CONDITION = """i.id IN (
         SELECT it.incident_id FROM incident_tags it JOIN tags t ON t.id = it.tag_id
         WHERE t.name = ANY(%(tags)s)
@@ -87,22 +91,22 @@ def _filter_conditions(filters: SearchFilters) -> list[str]:
     return conditions
 
 
+def _where(conditions: list[str]) -> str:
+    return "\n    AND ".join(conditions) or "TRUE"
+
+
 def _filtered_cte(filters: SearchFilters) -> str:
-    where = "\n    AND ".join(_filter_conditions(filters)) or "TRUE"
     return f"""filtered AS (
     SELECT i.id, i.title, i.description, i.created_at, i.search_vector, i.embedding
-    FROM incidents i
-    JOIN environment_types e ON e.id = i.environment_id
-    JOIN service_types s ON s.id = i.service_id
-    JOIN severity_types v ON v.id = i.severity_id
-    WHERE {where}
+    {_INCIDENTS_WITH_TYPES}
+    WHERE {_where(_filter_conditions(filters))}
 )"""
 
 
 def _branch_ctes(query: SearchQuery) -> dict[str, str]:
     branches = {"fts": _fts_cte()}
     if query.vector is not None:
-        branches["vec"] = _vector_cte()
+        branches["vec"] = _vector_cte(query.filters)
     return branches
 
 
@@ -116,13 +120,23 @@ def _fts_cte() -> str:
 )"""
 
 
-def _vector_cte() -> str:
+def _vector_cte(filters: SearchFilters) -> str:
+    """Nearest rows by cosine distance straight from `incidents`, so the IVFFlat index applies.
+
+    `ORDER BY embedding <=> vector LIMIT n` is the shape pgvector can serve from the index;
+    the id tiebreak and the similarity threshold are applied to those n rows.
+    """
+    conditions = ["i.embedding IS NOT NULL", *_filter_conditions(filters)]
     return f"""vec AS (
     SELECT id, ROW_NUMBER() OVER (ORDER BY similarity DESC, id) AS rank
-    FROM (SELECT id, {_SIMILARITY} AS similarity FROM filtered WHERE embedding IS NOT NULL) AS s
+    FROM (
+        SELECT i.id, round((1 - (i.embedding <=> %(vector)s))::numeric, 6) AS similarity
+        {_INCIDENTS_WITH_TYPES}
+        WHERE {_where(conditions)}
+        ORDER BY i.embedding <=> %(vector)s
+        LIMIT %(branch_limit)s
+    ) AS nearest
     WHERE similarity >= %(min_similarity)s::numeric
-    ORDER BY rank
-    LIMIT %(branch_limit)s
 )"""
 
 

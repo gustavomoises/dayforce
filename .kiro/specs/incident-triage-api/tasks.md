@@ -49,6 +49,14 @@ flowchart LR
     - _Requirements: 7.1-7.11, 8.2-8.5_
   - [x] 2.7 Implement `SeedService` (drop, schema, type tables, reproducible generation from the catalog, 200-500 check, ingest)
     - _Requirements: 6.1-6.5_
+  - [x] 2.8 Build the IVFFlat cosine index at the end of the seed
+    - After ingest and embeddings: `lists = clamp(embedded_rows / IVFFLAT_ROWS_PER_LIST, 1, IVFFLAT_MAX_LISTS)`, `CREATE INDEX ... USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)`, then `ANALYZE incidents`
+    - Built last because IVFFlat learns its lists from the rows present when it is created
+    - _Requirements: 6.6, 6.7_
+  - [x] 2.9 Use the index in the vector branch with probes
+    - Vector branch reads `incidents` directly (not the shared CTE) and orders by `embedding <=> query` with `LIMIT`, so the planner can use the index; similarity and threshold applied on that result
+    - Each search transaction sets `ivfflat.probes = IVFFLAT_PROBES` with `set_config(..., true)`; probes ≥ lists, so results are exact and reproducible
+    - _Requirements: 10.2, 10.6, 10.9_
 
 - [ ] 3. Langfuse stream (parallel with 2 and 4)
   - [x] 3.1 Create the Langfuse client (host `LANGFUSE_HOST`, keys from secrets) and the correlation middleware
@@ -142,9 +150,9 @@ flowchart LR
     { "id": 3, "tasks": ["2.1", "3.1", "3.6", "4.1", "4.2", "4.3"] },
     { "id": 4, "tasks": ["2.2", "3.2", "3.3", "3.4", "3.5"] },
     { "id": 5, "tasks": ["2.3", "2.4", "2.5"] },
-    { "id": 6, "tasks": ["2.6"] },
+    { "id": 6, "tasks": ["2.6", "2.9"] },
     { "id": 7, "tasks": ["2.7", "5.1", "5.2"] },
-    { "id": 8, "tasks": ["5.3"] },
+    { "id": 8, "tasks": ["2.8", "5.3"] },
     { "id": 9, "tasks": ["5.4"] },
     { "id": 10, "tasks": ["5.5", "5.6"] },
     { "id": 11, "tasks": ["6.1"] },

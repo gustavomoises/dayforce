@@ -91,7 +91,20 @@ Type tables are filled by `SeedService` from fixed lists, never from incident da
 
 `search_vector` is a generated column: `title` weight A, `description` B, `resolution_summary` C. Tags are matched through `incident_tags`, not inside the vector.
 
-No vector index: at 200-500 rows an exact scan takes a few milliseconds and stays correct with filters. An approximate HNSW index filters after the search and can return fewer rows than asked. Add `HNSW (embedding vector_cosine_ops)` past about 10,000 rows.
+### Vector index: IVFFlat, cosine, built at the end of the seed
+
+| Choice | Value | Why |
+|--------|-------|-----|
+| Index | `CREATE INDEX incidents_embedding_ivfflat ON incidents USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)` | Cosine matches how OpenAI embeddings are compared (`<=>`). |
+| When | last step of `cli seed`, after ingest and embeddings, then `ANALYZE incidents` | IVFFlat clusters the rows present at creation. Built on an empty table, every list is empty and recall collapses. Not in the DDL files for that reason. |
+| `lists` | `clamp(embedded_rows / 1000, 1, 10)` | pgvector guidance: rows / 1000 up to 1M rows. With fewer than 1,000 rows (this project: 100-500) that is 1 list, i.e. one cluster holding every row. |
+| `ivfflat.probes` | 10, set per search transaction with `set_config('ivfflat.probes', '10', true)` | Probes ≥ lists means every list is scanned: exact results, filters never lose rows, and the same query always returns the same order (Reproducible results). |
+
+At this size the index gives no speed gain over a sequential scan; it is there so the query path, settings and seed step are already correct when the data grows. Past ~10,000 rows, raise `IVFFLAT_MAX_LISTS` and set probes to about `sqrt(lists)`, accepting approximate results, or switch to HNSW.
+
+The vector branch reads `incidents` directly and orders by `embedding <=> query` with `LIMIT`, so the planner can use the index. Similarity (rounded to 6 decimals) and the `VECTOR_MIN_SIMILARITY` threshold are applied to that result. The `total` count still scans all filtered rows (a few hundred).
+
+Incidents added later through `POST /ingest` are found through the index too; the lists are not retrained until the next seed, which is fine at this size.
 
 ## Embeddings
 
@@ -301,5 +314,6 @@ A unit test runs the seed twice and compares the output, and checks each value o
 2. One transaction: `DROP TABLE IF EXISTS incident_tags, incidents, tags, service_types, severity_types, environment_types CASCADE`. Only these six names. Never `DROP SCHEMA`, never other tables, never the `vector` extension.
 3. `SchemaService.create()` recreates tables and indexes.
 4. Fill type tables, generate incidents (fixed seed), call `IngestService`, embed.
+5. Build the IVFFlat cosine index and run `ANALYZE incidents` (see Vector index).
 
 This also replaces the `incidents` table that already exists on RDS. Every seed run drops without asking. Incidents added later through `POST /ingest` are lost on the next seed, so seed is for setup and demo resets only. `SchemaService` and `IngestService` never drop anything.

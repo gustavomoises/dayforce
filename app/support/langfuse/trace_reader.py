@@ -8,7 +8,8 @@ from app.core.errors import LangfuseUnavailable, TraceNotReady
 from app.core.models.trace import TraceView
 from app.core.settings import Settings
 
-_FIELDS = "core,basic,io"
+# metadata carries the step log fields (q, filters, hits, top_ids, selected_ids).
+_FIELDS = "core,basic,io,metadata"
 _PAGE_LIMIT = 1000  # the API maximum; one request covers any trace this app produces
 
 

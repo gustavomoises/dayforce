@@ -128,10 +128,10 @@ flowchart LR
     - _Requirements: 14.4_
   - [x] 6.10 Tighten `incident-validation`: same failure type required, a shared product area or generic word is not enough, the verdict must agree with its reason
     - _Requirements: 12.1a_
-  - [ ] 6.11 Verify `incident-validation` v4 on EC2 (`test-assist-008`): gateway, certificate and slow-query incidents are `valid: false`, the 2 groups still appear
-    - Owner: create `incident-validation` v4 in Langfuse with all labels, then `git pull` and restart
+  - [x] 6.11 Verify `incident-validation` v4 on EC2 (`test-assist-008b`): gateway, certificate and slow-query incidents are `valid: false`, the 2 groups still appear
+    - 30 hits checked in 2 batches, 4 valid (the connection-pool incidents), 26 invalid with reasons that agree; stopped after an all-invalid batch
     - _Requirements: 12.1a, 12.1d_
-  - [ ] 6.12 Fix issues found; repeat until all endpoints work
+  - [x] 6.12 Fix issues found; repeat until all endpoints work
 
 - [ ] 7. Unit tests (start after task 6 passes)
   - [x] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)

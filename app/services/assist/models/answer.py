@@ -20,6 +20,7 @@ class CandidateAssessment(BaseModel):
     rank: int | None
     rank_justification: str | None
     group: int | None
+    group_reason: str | None
 
 
 class AssistAnswer(BaseModel):

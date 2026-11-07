@@ -9,11 +9,16 @@ RULES
    - "reason": one or two sentences explaining the decision, based only on the record's title, description or resolution_summary.
 3. Rank every relevant record: "rank" 1 = most relevant, then 2, 3 ... with no gaps or repeats.
    "rank_justification": why this record is ranked above the next one (for the last one, why it is still relevant).
-4. Group the relevant records: records that describe the same problem (same symptom, cause or fix, even if the title or wording differs) share the same "group" number.
+4. Group the relevant records so the same problem is not shown twice. Clustering rules:
+   - Same group only when the records share the same root cause AND the same fix, even if the title or wording differs.
+   - A shared symptom alone (for example "timeouts" or "connection pool exhausted") is not enough: a different cause or a different fix means a different group.
+   - Records that differ only in environment, severity or date, with the same cause and fix, belong to the same group.
+   - Each relevant record belongs to exactly one group. When unsure, keep records in separate groups.
+   - A relevant record that matches no other record is a group on its own.
    Number groups 1, 2, 3 ... in the order their best-ranked record appears: the group of rank 1 is group 1, the next new group is group 2, and so on.
-   Example: A rank 1 group 1, B rank 2 group 1 (same problem as A), C rank 3 group 2.
-   A relevant record that matches no other record is a group on its own.
-   For records that are not relevant, set "rank", "rank_justification" and "group" to null.
+   Example: A rank 1 group 1, B rank 2 group 1 (same cause and fix as A), C rank 3 group 2.
+   "group_reason": for the best-ranked record of a group, the shared cause and fix that define the group; for every other record, why it has the same cause and fix as that record.
+   For records that are not relevant, set "rank", "rank_justification", "group" and "group_reason" to null.
 5. Do not mark a record relevant just to have more results. One or two relevant records is a valid answer. Zero is a valid answer.
 6. Never invent details. Do not add causes, fixes, dates, services, numbers or incident IDs that are not in the records.
 7. "next_steps": a short checklist built only from the resolution_summary of relevant records. End each step with the incident IDs it comes from, for example "[inc-00042]". If no record is relevant, return an empty list.

@@ -144,3 +144,13 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   let's see if you got ticket A group1 relevance 1, ticketB group 1 relevance 2, ticket C group 2 relevance 3
   ```
 - Result: `incident-assist` v4 gives each relevant candidate a global `rank` and a `group` (numbered by first appearance in rank order), replacing `related_to`. The response has one entry per group led by its best-ranked incident, with the other members under `related` with their own rank; top 5 counts groups.
+
+**#13 Grouping reason and clustering rules**
+- Tool: Kiro (chat)
+- Goal: groups mixed incidents with the same symptom but different causes; make each grouping explainable.
+- Prompt:
+  ```
+  add a reason for grouping
+  add clustering group rules
+  ```
+- Result: `incident-assist` adds `group_reason` per relevant candidate and clustering rules (same root cause AND same fix; a shared symptom is not enough; environment, severity or date differences do not split a group; when unsure, keep separate). The lead now shows environment, severity and created_at; the note counts distinct problems.

@@ -44,19 +44,21 @@ def _check_coverage(answered_ids: Sequence[str], candidate_ids: Sequence[str]) -
 def _check_assessment(candidate: CandidateAssessment) -> None:
     if not candidate.reason.strip():
         raise GroundingFailure(f"candidate {candidate.id} has an empty reason")
-    justified = bool(candidate.rank_justification and candidate.rank_justification.strip())
-    if candidate.relevant and (candidate.rank is None or candidate.group is None or not justified):
+    texts = (candidate.rank_justification, candidate.group_reason)
+    complete = candidate.rank is not None and candidate.group is not None
+    if candidate.relevant and not (complete and all(t and t.strip() for t in texts)):
         raise GroundingFailure(
-            f"relevant candidate {candidate.id} needs a rank, a rank_justification and a group"
+            f"relevant candidate {candidate.id} needs a rank, a rank_justification, "
+            "a group and a group_reason"
         )
     if not candidate.relevant and (
         candidate.rank is not None
-        or candidate.rank_justification is not None
         or candidate.group is not None
+        or any(t is not None for t in texts)
     ):
         raise GroundingFailure(
             f"candidate {candidate.id} is not relevant, "
-            "so rank, rank_justification and group must be null"
+            "so rank, rank_justification, group and group_reason must be null"
         )
 
 

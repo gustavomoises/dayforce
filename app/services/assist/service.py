@@ -30,7 +30,7 @@ NO_MATCH_QUESTIONS = (
     "When did the problem start?",
     "Which service and environment are affected?",
 )
-# Fewer relevant incidents than this get an explicit note instead of padding.
+# Fewer groups (distinct problems) than this get an explicit note instead of padding.
 FEW_RESULTS = 3
 
 
@@ -112,9 +112,11 @@ def _no_match(validation: list[CandidateValidation]) -> AssistResponse:
     )
 
 
-def _note(relevant_count: int) -> str | None:
-    if 0 < relevant_count < FEW_RESULTS:
-        return f"only {relevant_count} relevant incidents found"
+def _note(group_count: int) -> str | None:
+    if group_count == 1:
+        return "only 1 distinct problem found"
+    if 1 < group_count < FEW_RESULTS:
+        return f"only {group_count} distinct problems found"
     return None
 
 
@@ -157,6 +159,10 @@ def _relevant_incident(
         title=by_id[lead.id].title,
         reason=lead.reason,
         rank_justification=lead.rank_justification,
+        group_reason=lead.group_reason,
+        environment=by_id[lead.id].environment,
+        severity=by_id[lead.id].severity,
+        created_at=by_id[lead.id].created_at,
         related=[_related_incident(c, by_id[c.id]) for c in rest],
     )
 
@@ -167,6 +173,7 @@ def _related_incident(candidate: CandidateAssessment, incident: Incident) -> Rel
         id=incident.id,
         title=incident.title,
         reason=candidate.reason,
+        group_reason=candidate.group_reason,
         environment=incident.environment,
         severity=incident.severity,
         created_at=incident.created_at,

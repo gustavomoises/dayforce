@@ -17,6 +17,7 @@ class RelatedIncident(BaseModel):
     id: str
     title: str
     reason: str
+    group_reason: str
     environment: Environment
     severity: Severity
     created_at: datetime
@@ -31,6 +32,10 @@ class RelevantIncident(BaseModel):
     title: str
     reason: str
     rank_justification: str
+    group_reason: str
+    environment: Environment
+    severity: Severity
+    created_at: datetime
     related: list[RelatedIncident] = []
 
 

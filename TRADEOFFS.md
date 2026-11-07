@@ -90,6 +90,7 @@ Every `/assist` path needs OpenAI at least twice, so a full outage always ends i
 ## Known issues and risks
 
 * **LLM nondeterminism.** Validation verdicts and groups can change between runs of the same question. Guardrails keep the output grounded, but not identical.
+* **Free text is checked by the prompt, not by code.** Code enforces the IDs, ranks, groups and next-step citations, and every incident field shown comes from the database. The wording of `reason`, `group_reason`, `next_steps` and `customer_draft` follows the prompt rule "never invent details" but is not verified against the records. Prompt fine-tuning (task 9) measures it; an automated check would be an LLM-as-judge step.
 * **Latency.** About 60 to 100 s per `/assist` can exceed default client or proxy timeouts.
 * **Cost per `/assist`.** Up to 5 LLM calls plus one embedding per new question. A public endpoint lets anyone spend that.
 * **Public endpoint.** No authentication or rate limiting, so `/ingest` can be called by anyone during the review period.

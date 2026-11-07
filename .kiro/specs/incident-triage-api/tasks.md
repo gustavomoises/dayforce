@@ -122,14 +122,21 @@ flowchart LR
     - _Requirements: 5.5_
   - [x] 6.8 Check `/ingest` twice (second run all skipped) and with an empty body (embeds pending only)
     - _Requirements: 7.11, 8.5_
-  - [x] 6.9 Check one failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
+  - [x] 6.9 Check failure paths: errors are clear, have no stack trace, and say what to set
+    - `LLM_TIMEOUT_SECONDS=0.01` gives 504 `llm_timeout`; an unreachable `LANGFUSE_HOST` gives 503 `langfuse_unavailable`
+    - Messages now name the setting or secret to check (timeout, Langfuse host and keys, Secrets Manager access)
     - _Requirements: 14.4_
-  - [x] 6.10 Tighten `incident-validation`: it judges strictly in the first batch and loosely in later ones (passed "concerns payment failures")
+  - [x] 6.10 Tighten `incident-validation`: same failure type required, a shared product area or generic word is not enough, the verdict must agree with its reason
     - _Requirements: 12.1a_
-  - [ ] 6.11 Fix issues found; repeat until all endpoints work
+  - [ ] 6.11 Verify `incident-validation` v4 on EC2 (`test-assist-008`): gateway, certificate and slow-query incidents are `valid: false`, the 2 groups still appear
+    - Owner: create `incident-validation` v4 in Langfuse with all labels, then `git pull` and restart
+    - _Requirements: 12.1a, 12.1d_
+  - [ ] 6.12 Fix issues found; repeat until all endpoints work
 
 - [ ] 7. Unit tests (start after task 6 passes)
   - [x] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)
+    - `tests/unit/test_guardrails.py` and `tests/unit/test_query_builder.py`: 16 tests, run with `python -m pytest tests/unit -q`
+    - 7.1-7.7 go beyond the take-home minimum; do them only if time allows, otherwise list them in `TRADEOFFS.md`
     - _Requirements: 12.5, 10.6_
   - [ ] 7.1 Core: `normalize`, `fingerprint`, `embedding_text`, settings, secrets loader
     - _Requirements: 2.2, 7.5, 7.7, 8.1_
@@ -162,7 +169,7 @@ flowchart LR
 ## Notes
 
 - Tasks 2, 3 and 4 never import each other. They share only `app/core`. The database stream uses a fake `EmbeddingClient` until task 4 is done.
-- Owner tasks: 3.6 (create prompts and labels in the Langfuse UI) and 6.1 (deploy and start on EC2). The agent cannot reach AWS or Langfuse from the dev machine.
+- Owner tasks: 3.6 and 6.11 (create prompts and labels in the Langfuse UI), 6.1 (deploy and start on EC2), and every `git pull` and restart on EC2. The agent cannot use AWS or Langfuse; it can call the public API on port 8000 and copy files with `scp`.
 - Unit tests are planned in task 7 and start only after task 6 passes, by owner decision.
 - Task 8.3 must ask the owner about EC2 deployment steps before writing the README.
 - Add prompts used during the build to `docs/prompt-log.md` as work progresses.
@@ -189,7 +196,7 @@ flowchart LR
     { "id": 12, "tasks": ["6.2"] },
     { "id": 13, "tasks": ["6.3", "6.4"] },
     { "id": 14, "tasks": ["6.5", "6.6", "6.7", "6.8", "6.9", "6.10"] },
-    { "id": 15, "tasks": ["6.11"] },
+    { "id": 15, "tasks": ["6.11", "6.12"] },
     { "id": 16, "tasks": ["7.0"] },
     { "id": 17, "tasks": ["7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7", "8.1", "8.2", "8.5", "8.6"] },
     { "id": 18, "tasks": ["8.3", "8.4"] }

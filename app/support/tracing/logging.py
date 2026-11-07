@@ -22,6 +22,9 @@ _STANDARD_ATTRS = frozenset(vars(logging.makeLogRecord({}))) | {
 _MAX_METADATA_CHARS = 200  # Langfuse metadata limit per value
 _EVENT_LEVELS = {logging.ERROR: "ERROR", logging.WARNING: "WARNING", logging.INFO: "DEFAULT"}
 _forwarding: ContextVar[bool] = ContextVar("langfuse_log_forwarding", default=False)
+# `extra={"io": "output", ...}` puts a log line's fields in the Langfuse event output;
+# otherwise they go in the event input.
+IO_FIELD = "io"
 # Library request logs duplicate what Langfuse already records; keep only their warnings.
 _QUIET_LOGGERS = ("httpx", "httpx2", "httpcore", "httpcore2", "botocore", "urllib3", "openai")
 
@@ -98,17 +101,21 @@ class LangfuseLogHandler(logging.Handler):
         # The stdout line is already written; a Langfuse failure must never break the request.
         try:
             with suppress(Exception):
+                fields = extra_fields(record)
+                side = "output" if fields.pop(IO_FIELD, None) == "output" else "input"
                 self._langfuse.create_event(
                     name=record.getMessage(),
                     level=_EVENT_LEVELS.get(record.levelno, "ERROR"),
                     metadata=_event_metadata(record),
+                    **{side: fields or None},
                 )
         finally:
             _forwarding.reset(token)
 
 
 def _event_metadata(record: logging.LogRecord) -> dict[str, Any]:
-    fields = {**extra_fields(record), "correlation_id": getattr(record, "correlation_id", None)}
+    """Filterable context; the log line's own fields go in the event input."""
+    fields = {"correlation_id": getattr(record, "correlation_id", None), "logger": record.name}
     return {key: _truncate(value) for key, value in fields.items() if value is not None}
 
 

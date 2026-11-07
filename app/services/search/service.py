@@ -59,7 +59,7 @@ class SearchService:
         )
         logger.info(
             "step tool:search output",
-            extra={"hits": page.total, "top_ids": [hit.id for hit in page.hits]},
+            extra={"io": "output", "hits": page.total, "top_ids": [hit.id for hit in page.hits]},
         )
         return SearchResult(total=page.total, results=page.hits)
 

@@ -52,7 +52,10 @@ class AssistService:
         k = request.candidate_multiplier * self._settings.assist_max_results
         hits = self._search.candidates(filters, request.question, k).results
         if not hits:
-            logger.info("step selected_ids", extra={"selected_ids": [], "relevant_count": 0})
+            logger.info(
+                "step selected_ids",
+                extra={"io": "output", "selected_ids": [], "relevant_count": 0},
+            )
             return _no_match()
         incidents = self._incidents.get_many([hit.id for hit in hits])
         prompt = self._prompts.get(
@@ -81,6 +84,7 @@ class AssistService:
         logger.info(
             "step selected_ids",
             extra={
+                "io": "output",
                 "selected_ids": [c.id for c in selected],
                 "relevant_count": sum(c.relevant for c in answer.candidates),
             },

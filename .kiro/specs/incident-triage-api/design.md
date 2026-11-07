@@ -315,7 +315,7 @@ Strict JSON schemas generated from these models are in `prompts/*.config.json`.
 **Validates: Requirements 7.10, 8.3, 8.4, 8.5**
 
 ### Property 6: Seed is reproducible
-*For any* catalog with 200-500 events and any `SEED`, running the seed twice produces identical incidents, IDs and dates.
+*For any* catalog whose events × `SEED_REPEATS` is 200-999 and any `SEED`, running the seed twice produces identical incidents, IDs and dates.
 **Validates: Requirements 6.3, 6.4**
 
 ### Property 7: Search is reproducible
@@ -331,11 +331,11 @@ Strict JSON schemas generated from these models are in `prompts/*.config.json`.
 **Validates: Requirements 4.5**
 
 ### Property 10: Guardrails only accept grounded answers
-*For any* LLM answer, guardrails accept it only if every Candidate appears exactly once, no other ID appears, relevant entries have unique ranks 1..k, non-relevant entries have no rank, and every reason is non-empty.
-**Validates: Requirements 12.5**
+*For any* LLM answer, guardrails first drop IDs that were not sent, then accept it only if every sent Candidate appears exactly once, relevant entries have unique ranks, a group and non-empty justifications, non-relevant entries have no rank or group, and every reason is non-empty; accepted output has ranks renumbered 1..k and groups 1..g.
+**Validates: Requirements 12.5, 12.5a**
 
 ### Property 11: Assist never pads
-*For any* accepted answer with k relevant Candidates, `relevant_incidents` has exactly min(k, 5) entries sorted by rank, and the status is `no_relevant_incidents` exactly when k = 0.
+*For any* accepted answer with k relevant Candidates in g groups, `relevant_incidents` has exactly min(g, 5) entries sorted by rank, and the status is `no_relevant_incidents` exactly when k = 0.
 **Validates: Requirements 12.6, 12.7**
 
 ### Property 12: APP_ENV mapping

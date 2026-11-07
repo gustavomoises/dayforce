@@ -13,7 +13,7 @@ def get_correlation_id() -> str | None:
 
 
 @contextmanager
-def correlation_scope(correlation_id: str) -> Iterator[None]:
+def correlation_scope(correlation_id: str | None) -> Iterator[None]:
     """Set the correlation_id for the enclosed block and restore the previous value after."""
     token = _correlation_id.set(correlation_id)
     try:

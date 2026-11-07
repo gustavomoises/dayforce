@@ -42,5 +42,7 @@ class CorrelationMiddleware:
                 MutableHeaders(scope=message)[CORRELATION_HEADER] = correlation_id
             await send(message)
 
+        # Kept on the request too: the 500 handler runs outside this middleware's scope.
+        scope.setdefault("state", {})["correlation_id"] = correlation_id
         with correlation_scope(correlation_id):
             await self.app(scope, receive, send_with_header)

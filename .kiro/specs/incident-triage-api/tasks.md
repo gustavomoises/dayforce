@@ -47,7 +47,7 @@ flowchart LR
   - [x] 2.6 Implement `IngestService` (normalize, defensive check, hash, outcomes, commit, then embed pending; empty body embeds only)
     - Build with a fake `EmbeddingClient` until task 4 is done
     - _Requirements: 7.1-7.11, 8.2-8.5_
-  - [x] 2.7 Implement `SeedService` (drop, schema, type tables, reproducible generation from the catalog, 200-500 check, ingest)
+  - [x] 2.7 Implement `SeedService` (drop, schema, type tables, reproducible generation from the catalog, 200-999 check, ingest)
     - _Requirements: 6.1-6.5_
   - [x] 2.8 Build the IVFFlat cosine index at the end of the seed
     - After ingest and embeddings: `lists = clamp(embedded_rows / IVFFLAT_ROWS_PER_LIST, 1, IVFFLAT_MAX_LISTS)`, `CREATE INDEX ... USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)`, then `ANALYZE incidents`
@@ -133,24 +133,25 @@ flowchart LR
     - _Requirements: 12.1a, 12.1d_
   - [x] 6.12 Fix issues found; repeat until all endpoints work
 
-- [ ] 7. Unit tests (start after task 6 passes)
+- [x] 7. Unit tests (start after task 6 passes)
   - [x] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)
     - `tests/unit/test_guardrails.py` and `tests/unit/test_query_builder.py`: 16 tests, run with `python -m pytest tests/unit -q`
-    - 7.1-7.7 go beyond the take-home minimum; do them only if time allows, otherwise list them in `TRADEOFFS.md`
     - _Requirements: 12.5, 10.6_
-  - [ ] 7.1 Core: `normalize`, `fingerprint`, `embedding_text`, settings, secrets loader
+  - [x] 7.1 Core: `normalize`, `fingerprint`, `embedding_text`, settings, secrets loader
     - _Requirements: 2.2, 7.5, 7.7, 8.1_
-  - [ ] 7.2 Database stream: `query_builder` (filters, parameterized, tiebreak, NULL embeddings), `SchemaService`, `IngestService` (every outcome, embedding failure, empty body), `SeedService` (reproducible, weights, 200-500)
+  - [x] 7.2 Database stream: `query_builder` (filters, parameterized, tiebreak, NULL embeddings), `SchemaService`, `IngestService` (every outcome, embedding failure, empty body), `SeedService` (reproducible, weights, 200-999)
     - _Requirements: 4.5, 6.4, 7.6-7.10, 8.3-8.5, 10.6_
-  - [ ] 7.3 Langfuse stream: APP_ENV mapping, root observation attributes, log handler, `PromptProvider` errors, `TraceReader`
+  - [x] 7.3 Langfuse stream: APP_ENV mapping, root observation attributes, log handler, `PromptProvider` errors, `TraceReader`
     - _Requirements: 9.3-9.5, 13.2, 13.5, 13.7, 13.8_
-  - [ ] 7.4 OpenAI stream: config pass-through, output parsing errors, timeouts, embedding shape checks, schema sync with `prompts/`
+  - [x] 7.4 OpenAI stream: config pass-through, output parsing errors, timeouts, embedding shape checks, schema sync with `prompts/`
     - _Requirements: 8.6, 9.6-9.8_
-  - [ ] 7.5 Services: `CatalogService`, `SearchService`, `AssistService`, `guardrails` (every rejection rule, never pads)
+  - [x] 7.5 Services: `CatalogService`, `SearchService`, `AssistService`, `guardrails` (every rejection rule, never pads)
     - _Requirements: 5.2-5.4, 12.2-12.7_
-  - [ ] 7.6 Routes and container: 422/404 responses, `dependency_overrides` fakes, same wiring for API and CLI
+  - [x] 7.6 Routes and container: 422/404 responses, `dependency_overrides` fakes, same wiring for API and CLI
     - _Requirements: 3.4, 3.5, 14.1_
-  - [ ] 7.7 Property tests (Hypothesis) for design Properties 1, 2, 3, 9, 10, 11
+  - [x] 7.7 Property tests (Hypothesis) for design Properties 1, 2, 3, 9, 10, 11
+    - Full suite: 342 passed, 1 strict xfail (a batch repeating one id is not idempotent, Property 3; owner decision pending)
+    - Found and fixed: 500 responses lost the correlation_id (handler runs outside `CorrelationMiddleware`)
     - _Requirements: 7.5, 7.7, 7.9, 4.5, 12.5, 12.7_
 
 - [ ] 8. Live tests, Postman and documentation

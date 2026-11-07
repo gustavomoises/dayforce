@@ -163,3 +163,12 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   after the response from LLM you check if the incident exists based on the most similar call? never trust LLM with real data always check the output based on the input. if it doesn't exist remove this from the response
   ```
 - Result: unknown IDs used to reject the whole answer (502). Now `guardrails.ground` and `screening.ground_verdicts` remove IDs not sent to the LLM, drop next steps citing no incident or a non-relevant/unknown one, and renumber ranks and groups. Titles, environment, severity and dates already came from the database.
+
+**#15 Stricter validation**
+- Tool: Kiro (chat)
+- Goal: validation passed every payments incident (shared product area), even when its own reason said the failure type did not match.
+- Prompt:
+  ```
+  yes   (to the proposal: valid only for the same failure type; a shared product area or generic word is not enough; the verdict must agree with the reason)
+  ```
+- Result: `incident-validation` v4 text. Rule 2 requires the same failure type (plus the product area when the question names one), rule 3 rejects area-only or word-only matches, rule 5 forces the verdict to agree with the reason. Config unchanged.

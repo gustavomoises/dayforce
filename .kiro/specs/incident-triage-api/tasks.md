@@ -114,7 +114,7 @@ flowchart LR
     - _Requirements: 5.1, 6.1_
   - [x] 6.4 Check `/health`, `/search`, `/assist` (validation) and `/debug/trace` with curl, plus the trace and log events in Langfuse
     - _Requirements: 10.1, 12.7, 13.2, 13.7_
-  - [ ] 6.5 Check `/assist` after 5.8 and 5.9 (groups, `group_reason`, grounding)
+  - [x] 6.5 Check `/assist` after 5.8 and 5.9 (groups, `group_reason`, grounding)
     - _Requirements: 12.1d, 12.5_
   - [ ] 6.6 Check `/incidents/{id}` and an unknown id (404)
     - _Requirements: 11.1, 11.2_
@@ -124,7 +124,7 @@ flowchart LR
     - _Requirements: 7.11, 8.5_
   - [ ] 6.9 Check one failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
     - _Requirements: 14.4_
-  - [ ] 6.10 Tighten `incident-validation`: it judges strictly in the first batch and loosely in later ones (passed "concerns payment failures")
+  - [x] 6.10 Tighten `incident-validation`: it judges strictly in the first batch and loosely in later ones (passed "concerns payment failures")
     - _Requirements: 12.1a_
   - [ ] 6.11 Fix issues found; repeat until all endpoints work
 

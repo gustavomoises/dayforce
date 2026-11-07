@@ -17,59 +17,59 @@ flowchart LR
 
 ## Tasks
 
-- [ ] 1. Contracts and project skeleton (blocks everything else)
-  - [ ] 1.1 Create the folder structure from `architecture.md` (`main.py`, `app/core`, `app/api`, `app/services`, `app/support`, `app/container.py`, `app/cli.py`, `tests/unit`, `tests/live`, `data/`)
+- [x] 1. Contracts and project skeleton (blocks everything else)
+  - [x] 1.1 Create the folder structure from `architecture.md` (`main.py`, `app/core`, `app/api`, `app/services`, `app/support`, `app/container.py`, `app/cli.py`, `tests/unit`, `tests/live`, `data/`)
     - Replace `requirements.txt` with the EC2 dependencies (fastapi, uvicorn, pydantic, psycopg[binary,pool], pgvector, boto3, openai, langfuse>=5,<6, httpx, pytest, hypothesis)
     - Add `requirements-dev.txt` (ruff) and ruff config in `pyproject.toml` (line length 100, rules E, F, I, B, UP)
     - _Requirements: 1.2, 3.1_
-  - [ ] 1.2 Write core models: `Incident`, `Environment`, `Severity`, `SearchFilters`, `LLMConfig`, `CompiledPrompt`, `LLMResult[T]`, `EmbeddingResult`
+  - [x] 1.2 Write core models: `Incident`, `Environment`, `Severity`, `SearchFilters`, `LLMConfig`, `CompiledPrompt`, `LLMResult[T]`, `EmbeddingResult`
     - _Requirements: 3.2_
-  - [ ] 1.3 Write `core/ports.py` Protocols: `PromptProvider`, `LLMClient`, `EmbeddingClient`, `IncidentRepository`, `SchemaRepository`, `TraceReader`
+  - [x] 1.3 Write `core/ports.py` Protocols: `PromptProvider`, `LLMClient`, `EmbeddingClient`, `IncidentRepository`, `SchemaRepository`, `TraceReader`
     - _Requirements: 3.3_
-  - [ ] 1.4 Write `core/settings.py` (env vars and defaults) and `core/errors.py` (domain errors with HTTP status)
+  - [x] 1.4 Write `core/settings.py` (env vars and defaults) and `core/errors.py` (domain errors with HTTP status)
     - _Requirements: 2.3, 14.4_
-  - [ ] 1.5 Write pure helpers `core/normalize.py`, `core/fingerprint.py`, `core/embedding_text.py`
+  - [x] 1.5 Write pure helpers `core/normalize.py`, `core/fingerprint.py`, `core/embedding_text.py`
     - _Requirements: 7.5, 7.7, 8.1_
-  - [ ] 1.6 Write `support/secrets/secrets_manager.py` reading the four secrets with exact keys
+  - [x] 1.6 Write `support/secrets/secrets_manager.py` reading the four secrets with exact keys
     - _Requirements: 2.1, 2.2_
 
-- [ ] 2. Database stream (parallel with 3 and 4)
-  - [ ] 2.1 Write SQL files `001_types.sql` … `005_query_embeddings.sql` (tables, constraints, generated `search_vector`, indexes)
+- [x] 2. Database stream (parallel with 3 and 4)
+  - [x] 2.1 Write SQL files `001_types.sql` … `005_query_embeddings.sql` (tables, constraints, generated `search_vector`, indexes)
     - _Requirements: 4.1, 4.4_
-  - [ ] 2.2 Implement the connection pool (`sslmode=require`, statement timeout) and `SchemaRepository` (apply SQL files, drop the six incident tables, upsert types)
+  - [x] 2.2 Implement the connection pool (`sslmode=require`, statement timeout) and `SchemaRepository` (apply SQL files, drop the six incident tables, upsert types)
     - _Requirements: 2.5, 4.2, 4.3, 6.2_
-  - [ ] 2.3 Implement `SchemaService.create()`
+  - [x] 2.3 Implement `SchemaService.create()`
     - _Requirements: 4.1, 4.2_
-  - [ ] 2.4 Implement `IncidentRepository` writes: load types, find by IDs and hashes, write plan (incidents, tags, links), lock pending embeddings (`FOR UPDATE SKIP LOCKED`), save embeddings
+  - [x] 2.4 Implement `IncidentRepository` writes: load types, find by IDs and hashes, write plan (incidents, tags, links), lock pending embeddings (`FOR UPDATE SKIP LOCKED`), save embeddings
     - _Requirements: 7.2, 7.8, 8.3_
-  - [ ] 2.5 Implement `query_builder` (hybrid full-text + vector, filters, RRF, `id` tiebreak, real `total`) and `IncidentRepository` reads (search, get, get_many, query embeddings)
+  - [x] 2.5 Implement `query_builder` (hybrid full-text + vector, filters, RRF, `id` tiebreak, real `total`) and `IncidentRepository` reads (search, get, get_many, query embeddings)
     - _Requirements: 4.5, 10.1-10.6, 11.1_
-  - [ ] 2.6 Implement `IngestService` (normalize, defensive check, hash, outcomes, commit, then embed pending; empty body embeds only)
+  - [x] 2.6 Implement `IngestService` (normalize, defensive check, hash, outcomes, commit, then embed pending; empty body embeds only)
     - Build with a fake `EmbeddingClient` until task 4 is done
     - _Requirements: 7.1-7.11, 8.2-8.5_
-  - [ ] 2.7 Implement `SeedService` (drop, schema, type tables, reproducible generation from the catalog, 200-500 check, ingest)
+  - [x] 2.7 Implement `SeedService` (drop, schema, type tables, reproducible generation from the catalog, 200-500 check, ingest)
     - _Requirements: 6.1-6.5_
 
 - [ ] 3. Langfuse stream (parallel with 2 and 4)
-  - [ ] 3.1 Create the Langfuse client (host `LANGFUSE_HOST`, keys from secrets) and the correlation middleware
+  - [x] 3.1 Create the Langfuse client (host `LANGFUSE_HOST`, keys from secrets) and the correlation middleware
     - _Requirements: 13.1_
-  - [ ] 3.2 Implement `traced_endpoint` (resolve APP_ENV, root observation with trace ID from correlation_id, environment and metadata, flush after the response) and re-export `@observe` as `traced`
+  - [x] 3.2 Implement `traced_endpoint` (resolve APP_ENV, root observation with trace ID from correlation_id, environment and metadata, flush after the response) and re-export `@observe` as `traced`
     - _Requirements: 9.4, 13.2, 13.3, 13.6_
-  - [ ] 3.3 Implement JSON stdout logging with correlation_id and observation ID, and `LangfuseLogHandler` (events, levels, never raises)
+  - [x] 3.3 Implement JSON stdout logging with correlation_id and observation ID, and `LangfuseLogHandler` (events, levels, never raises)
     - _Requirements: 13.7, 13.8, 13.10_
-  - [ ] 3.4 Implement `PromptProvider` (text prompt by label, no cache, compile variables, validate config into `LLMConfig`, clear 503 errors)
+  - [x] 3.4 Implement `PromptProvider` (text prompt by label, no cache, compile variables, validate config into `LLMConfig`, clear 503 errors)
     - _Requirements: 9.1-9.5_
-  - [ ] 3.5 Implement `TraceReader` (observations by trace ID, unchanged, Langfuse URL, 404 retry, 503)
+  - [x] 3.5 Implement `TraceReader` (observations by trace ID, unchanged, Langfuse URL, 404 retry, 503)
     - _Requirements: 13.5_
   - [ ] 3.6 Create prompts `incident-assist` and `incident-catalog` in Langfuse from `prompts/` with labels `dev`, `qa`, `stage`, `production` (owner, in the Langfuse UI)
     - _Requirements: 9.1, 9.2_
 
-- [ ] 4. OpenAI stream (parallel with 2 and 3)
-  - [ ] 4.1 Implement `OpenAIClient` (`LLMClient`): Responses API, config pass-through, parse into the output model, schema name check, 502/503/504 errors, timeout
+- [x] 4. OpenAI stream (parallel with 2 and 3)
+  - [x] 4.1 Implement `OpenAIClient` (`LLMClient`): Responses API, config pass-through, parse into the output model, schema name check, 502/503/504 errors, timeout
     - _Requirements: 9.6-9.8_
-  - [ ] 4.2 Implement `OpenAIEmbedder` (`EmbeddingClient`): batches of up to 100, timeout, count and dimension checks
+  - [x] 4.2 Implement `OpenAIEmbedder` (`EmbeddingClient`): batches of up to 100, timeout, count and dimension checks
     - _Requirements: 8.1, 8.6_
-  - [ ] 4.3 Write output models `AssistAnswer`, `CatalogBatch` and `cli schemas`; confirm they match `prompts/*.config.json`
+  - [x] 4.3 Write output models `AssistAnswer`, `CatalogBatch` and `cli schemas`; confirm they match `prompts/*.config.json`
     - _Requirements: 9.8_
 
 - [ ] 5. Services, routes and CLI (after 2, 3 and 4)

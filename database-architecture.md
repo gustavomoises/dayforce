@@ -262,7 +262,7 @@ The database FKs are a second safety net. The service check gives a clear per-in
 |------|-------|
 | `Incident`, `Environment`, `Severity` enums, `normalize()`, `fingerprint()`, `embedding_text()` | `app/core` (used by seed, ingest, search, database) |
 | `EmbeddingClient` protocol + OpenAI implementation (batch, timeout) | `app/support/llm/` |
-| SQL files `001_types.sql`, `002_tags.sql`, `003_incidents.sql`, `004_indexes.sql` | `app/services/schema/sql/` |
+| SQL files `001_types.sql`, `002_tags.sql`, `003_incidents.sql`, `004_query_embeddings.sql`, `005_indexes.sql` | `app/support/database/sql/` (no SQL outside the database package) |
 | `SchemaRepository`, `IncidentRepository` | `app/support/database/` |
 
 ## Unit tests

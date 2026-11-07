@@ -41,13 +41,13 @@ app/
     deps.py                     # one Depends getter per service
     ingest.py search.py incidents.py assist.py catalog.py debug.py health.py
   services/
-    schema/   service.py  sql/              # creates all tables and indexes (idempotent)
-    catalog/  service.py  defaults.py  models/catalog.py  # LLM: services x n events -> JSON {service: [events]}
+    schema/   service.py                # creates all tables and indexes (idempotent); SQL in support/database/sql/
+    catalog/  service.py  defaults.py  models/batch.py  # LLM: services x n events -> JSON {service: [events]}
     seed/     service.py  models/seed_config.py   # reset: drop app tables, SchemaService, type tables, incidents (fixed seed), IngestService
     ingest/   service.py  models/ingest_result.py   # reusable write path: normalize, check, hash, upsert
     search/   service.py  models/search_result.py
     incidents/service.py
-    assist/   service.py  guardrails.py  models/assist.py
+    assist/   service.py  guardrails.py  models/answer.py
   support/
     database/  pool.py  query_builder.py  incident_repository.py  schema_repository.py
     llm/       openai_client.py  openai_embedder.py   # LLMClient + EmbeddingClient protocols
@@ -118,7 +118,7 @@ Run order: `cli seed` (drops the app tables, recreates them through SchemaServic
 1. **SchemaService** creates every table and index from versioned SQL files. Idempotent (`CREATE ... IF NOT EXISTS`). Tables, content hash and ingest rules: [database-architecture.md](database-architecture.md).
 2. **CatalogService** asks the LLM, once per service, for `n` events with `title`, `description`, `resolution_summary`, `tags`. Returns a JSON string `{"<service>": [event, ...]}`, saved to `data/service_catalog.json`. Run once; the file is committed because LLM output is not repeatable.
 
-   Input (`CatalogRequest`, `app/services/catalog/models/catalog.py`), defaults used for anything not given:
+   Input (`CatalogRequest`, `app/services/catalog/models/request.py`), defaults used for anything not given:
 
    | Field | Default | Rules |
    |-------|---------|-------|
@@ -282,8 +282,8 @@ Each call has one Pydantic output model. The model is the source of truth; the J
 
 | Call | Prompt | Output model | Location |
 |------|--------|--------------|----------|
-| Assist | `incident-assist` | `AssistAnswer` | `app/services/assist/models/assist.py` |
-| Catalog (one call per service) | `incident-catalog` | `CatalogBatch` | `app/services/catalog/models/catalog.py` |
+| Assist | `incident-assist` | `AssistAnswer` | `app/services/assist/models/answer.py` |
+| Catalog (one call per service) | `incident-catalog` | `CatalogBatch` | `app/services/catalog/models/batch.py` |
 | Embeddings | none | `EmbeddingResult` | `app/core/models/prompt.py` (used by support and services) |
 
 ```python

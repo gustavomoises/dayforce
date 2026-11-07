@@ -257,6 +257,17 @@ sequenceDiagram
     R-->>C: JSON + X-Correlation-ID
 ```
 
+```mermaid
+flowchart LR
+    Q["question"] --> S["hybrid search<br/>most similar hits"]
+    S --> V["incident-validation<br/>same failure type?"]
+    V -->|"valid"| A["incident-assist<br/>rank and group"]
+    V -->|"not valid"| X["kept in validation with the reason,<br/>never in the answer"]
+    A --> R["relevant_incidents"]
+```
+
+Search finds what is *similar*; validation decides what is *relevant*. In a live run of "database connection timeouts in payments" filtered to `prod`, search returned 30 hits that share words such as "payment", "timeout" or "connection". Validation rejected 28 of them (expired certificates, DNS, gateway errors, slow queries), each with a reason, and the 2 valid ones became 2 groups. The `validation` field returns every verdict, so a reader can see what was found, what was rejected and why. A worked example of the response is in the [README](README.md#similar-is-not-the-same-as-relevant-a-real-run).
+
 The work is split into two LLM steps with different jobs. `incident-validation` is a cheap filter on title and snippet; `incident-assist` sees full records of valid hits only, so its context holds no noise. Both steps go through `SearchService`, and every LLM answer passes code checks before it reaches the response.
 
 ### Step 1: validation in batches (`CandidateScreener`, `screening.py`)

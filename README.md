@@ -43,6 +43,28 @@ flowchart LR
     G --> R["response"]
 ```
 
+### Similar is not the same as relevant: a real run
+
+The question "database connection timeouts in payments", filtered to `prod`, on the live API:
+
+```mermaid
+flowchart LR
+    Q["question"] --> S["hybrid search<br/>30 most similar hits"]
+    S --> V["incident-validation<br/>same failure type?"]
+    V -->|"2 valid"| A["incident-assist<br/>rank and group"]
+    V -->|"28 not valid"| X["kept in validation<br/>with the reason,<br/>never in the answer"]
+    A --> R["relevant_incidents:<br/>2 groups"]
+```
+
+Search ranks by words and meaning, so "payment", "timeout" and "connection" also bring back expired certificates, DNS failures, gateway errors and slow queries. Validation asks a stricter question, whether the failure type is the same, and rejects 28 of the 30 hits, each with a reason such as "connection errors to the payment gateway, not the database". Only the 2 valid incidents reach `incident-assist`, which sees two different root causes and fixes and returns 2 groups. The response says "only 2 distinct problems found" rather than padding the list to 3-5.
+
+| Response field | What it shows in this run |
+|----------------|---------------------------|
+| `validation` | all 30 hits search found, `valid` true or false, each with a reason: the audit trail |
+| `candidates` | the 2 valid incidents as judged by `incident-assist` (relevant, rank, group) |
+| `relevant_incidents` | `inc-00156` (connections held during gateway calls) and `inc-00517` (connection leak on an error path) |
+| `related` | empty here: the `dev` copies of both events were filtered out by `environment: prod`; without the filter they appear under their group |
+
 Validation keeps only hits with the same failure type as the question, so the assist call sees no noise. The assist call groups incidents that share a root cause and fix, so one problem appears once, with its other occurrences under `related`. The guardrails never trust the LLM with data: IDs it was not given are dropped, and titles, environments, severities and dates come from the database. Results are never padded, so the answer may hold 1 or 2 groups with a note. Details are in [architecture.md](architecture.md#assist).
 
 ## Try it (public API)

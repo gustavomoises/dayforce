@@ -180,6 +180,11 @@ def test_langfuse_failure_never_raises() -> None:
     assert len(events) == 1
 
 
+@pytest.mark.parametrize("name", ["uvicorn", "uvicorn.access", "uvicorn.error"])
+def test_server_logs_stay_on_stdout_only(name: str) -> None:
+    assert emit(make_record('1.2.3.4:5 - "POST /assist HTTP/1.1" 200', name=name)) == []
+
+
 def test_logs_raised_while_sending_are_not_forwarded() -> None:
     langfuse = FakeLangfuse()
     handler = LangfuseLogHandler(langfuse)

@@ -32,6 +32,11 @@ _QUIET_LOGGERS = ("httpx", "httpx2", "httpcore", "httpcore2", "botocore", "urlli
 _SERVER_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 
+def _is_server_log(record: logging.LogRecord) -> bool:
+    """uvicorn lines stay on stdout only; in Langfuse each one would open a stray trace."""
+    return record.name.split(".", 1)[0] == "uvicorn"
+
+
 def configure_logging(level: int | str, langfuse: Langfuse | None = None) -> None:
     """Install JSON stdout logging; with a client, also forward records to Langfuse.
 
@@ -102,7 +107,11 @@ class LangfuseLogHandler(logging.Handler):
         self._langfuse = langfuse
 
     def emit(self, record: logging.LogRecord) -> None:
-        if _forwarding.get() or getattr(record, "observation_id", None) is None:
+        if (
+            _forwarding.get()
+            or _is_server_log(record)
+            or getattr(record, "observation_id", None) is None
+        ):
             return
         token = _forwarding.set(True)  # SDK logs raised while sending must not loop back here
         # The stdout line is already written; a Langfuse failure must never break the request.

@@ -35,6 +35,7 @@ What was built, what was left out, and the decisions that differ from the take-h
 * **Secrets come from AWS Secrets Manager, not environment variables.** The OpenAI key, Langfuse keys and database credentials are read with the EC2 instance role. Non-secret settings (region, Langfuse host, embedding model, timeouts, limits) are environment variables. The chat model and its settings come from the Langfuse prompt config, not `LLM_MODEL`.
 * **A repeated id in one ingest batch: last version wins.** Items apply in order and the id is written once. A re-run leaves the data and embeddings unchanged, but may report those items as `updated` instead of `skipped`.
 * **Validation adds LLM calls and latency for precision.** `/assist` checks hits with `incident-validation` in batches of up to 15, at most 4 calls, before the `incident-assist` call. This removes incidents that only share a product area or a word, at the cost of about 60 to 100 s per `/assist`.
+* **`/assist` returns no incidents when OpenAI is down.** It answers 503 (`embedding_unavailable` or `llm_unavailable`), or 504 (`llm_timeout`) on a timeout, with what to check. No partial answer is possible: the query embedding, the `incident-validation` step and the `incident-assist` step all need OpenAI. Skipping only validation was considered and rejected, because the assist call still fails. Returning full-text hits marked "not validated" was also rejected, because it is the text-only fallback rejected for `/search`. See the observation below.
 * **Prompts live in Langfuse with no fallback.** If Langfuse is down or a label is missing, `/assist` and `cli catalog` return 503 with what to fix. A local fallback prompt could drift from the reviewed version without anyone noticing.
 
 ```mermaid
@@ -66,6 +67,24 @@ flowchart TD
     A --> G["Guardrails: drop unknown ids, renumber, no LLM"]
     G --> R["Response with groups, verdicts, correlation_id"]
 ```
+
+### Observation: what `/assist` returns when OpenAI is down
+
+```mermaid
+flowchart TD
+    Q["POST /assist"] --> E{"query vector stored<br/>from an earlier call?"}
+    E -- no --> EMB["embed the query: OpenAI"]
+    EMB -- "down" --> F1["503 embedding_unavailable<br/>no search, no incidents"]
+    EMB -- ok --> S["hybrid search: PostgreSQL"]
+    E -- yes --> S
+    S --> V["incident-validation: OpenAI"]
+    V -- "down or timeout" --> F2["503 llm_unavailable or 504 llm_timeout"]
+    V -- ok --> A["incident-assist: OpenAI"]
+    A -- "down or timeout" --> F2
+    A -- ok --> R["200 answer"]
+```
+
+Every `/assist` path needs OpenAI at least twice, so a full outage always ends in 503 or 504 with an error body that says what to check. A repeated question reuses its stored query vector and gets as far as validation, but the next LLM call fails the same way. Skipping validation would only send unvalidated hits into an `incident-assist` call that also cannot run. Clients should treat 503 as temporary and retry. `GET /incidents/{id}` and `GET /catalog` still work, because they need only PostgreSQL and the committed catalog.
 
 ## Known issues and risks
 

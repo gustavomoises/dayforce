@@ -357,6 +357,8 @@ Every error body is `{error, detail, correlation_id}` and never contains a stack
 
 An embedding failure inside ingest is not an HTTP error: the incidents stay saved and the 200 response reports `embedding_pending` and `embedding_error`.
 
+When OpenAI is down, `/assist` returns 503 (504 on a timeout) and no incidents. The query embedding, the validation step and the assist step all need OpenAI, so no partial answer is possible. Skipping validation was considered and rejected, because the assist call fails too. See [TRADEOFFS.md](TRADEOFFS.md#observation-what-assist-returns-when-openai-is-down).
+
 ## Prompts and LLM config (Langfuse owns both)
 
 Each LLM call uses one Langfuse text prompt. The prompt text holds the instructions; the prompt `config` holds the OpenAI settings. Version 1 of each prompt and config is in [prompts/](prompts/README.md).

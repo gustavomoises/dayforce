@@ -200,3 +200,17 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   do full task 8 so we can do a final revision, alwaus use mermaid daigram to explain our decisions to make sure they fully understand each cahnge and archtect approach. what will be missing is the prompt fine tuniing that we should after all docs are ready
   ```
 - Result: one agent for live tests and Postman, one for the architecture docs, one for PROMPTS/AI-NOTES/TRADEOFFS; README and cleanup by the main agent. Every decision has a Mermaid diagram. The doc agent found spec lines that no longer matched the code (prompt list, step log fields, truncation wording); requirements were corrected. Prompt fine-tuning added as task 9.
+
+**#19 /assist when OpenAI is down**
+- Tool: Kiro (chat)
+- Goal: decide what `/assist` returns during an OpenAI outage.
+- Prompt:
+  ```
+  if open ai is not avaialble we can remove the validation and tell that it was not possible to do LLM validation becasue the openAI is donw
+  ```
+- Follow-ups:
+  ```
+  you cannot do assist without openAI am I correct return  a 403 ?is that correct open ai is not avaialbe
+  even theto get ill be not psosible because we will not be able to embed
+  ```
+- Result: no code change. The AI explained that 403 means the client is not allowed, so 503 (504 on timeout) is correct for an upstream outage. The owner then saw that skipping validation cannot help: the query embedding and the assist call need OpenAI too. Recorded as an observation in TRADEOFFS.md (with a diagram) and architecture.md. Rejected: skipping only validation, and returning full-text hits marked "not validated".

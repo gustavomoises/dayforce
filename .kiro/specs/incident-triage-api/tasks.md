@@ -60,7 +60,7 @@ flowchart LR
     - Each search transaction sets `ivfflat.probes = IVFFLAT_PROBES` with `set_config(..., true)`; probes ≥ lists, so results are exact and reproducible
     - _Requirements: 10.2, 10.6, 10.9_
 
-- [ ] 3. Langfuse stream (parallel with 2 and 4)
+- [x] 3. Langfuse stream (parallel with 2 and 4)
   - [x] 3.1 Create the Langfuse client (host `LANGFUSE_HOST`, keys from secrets) and the correlation middleware
     - _Requirements: 13.1_
   - [x] 3.2 Implement `traced_endpoint` (resolve APP_ENV, root observation with trace ID from correlation_id, environment and metadata, flush after the response) and re-export `@observe` as `traced`
@@ -71,7 +71,7 @@ flowchart LR
     - _Requirements: 9.1-9.5_
   - [x] 3.5 Implement `TraceReader` (observations by trace ID, unchanged, Langfuse URL, 404 retry, 503)
     - _Requirements: 13.5_
-  - [ ] 3.6 Create prompts `incident-assist` and `incident-catalog` in Langfuse from `prompts/` with labels `dev`, `qa`, `stage`, `production` (owner, in the Langfuse UI)
+  - [x] 3.6 Create prompts `incident-assist` and `incident-catalog` in Langfuse from `prompts/` with labels `dev`, `qa`, `stage`, `production` (owner, in the Langfuse UI)
     - _Requirements: 9.1, 9.2_
 
 - [x] 4. OpenAI stream (parallel with 2 and 3)
@@ -90,8 +90,13 @@ flowchart LR
   - [x] 5.7 Validation step before assist: `incident-validation` prompt and config, `ValidationAnswer` model, `CandidateScreener` (batches of at most 15, offset paging, rate-based batch size, stop rules), search `offset`, only valid incidents to assist, verdicts in the response
     - Owner: create `incident-validation` in Langfuse with labels `dev`, `qa`, `stage`, `production`
     - _Requirements: 12.1a, 12.1b, 12.1c, 12.3_
-  - [x] 5.3 Implement `guardrails.validate` and `AssistService` (n × 5 candidates, full records, prompt, one LLM call, status, top 5 never padded, step logs)
+  - [x] 5.3 Implement `guardrails` and `AssistService` (n × 5 candidates, full records, prompt, one LLM call, status, top 5 never padded, step logs)
     - _Requirements: 12.1-12.8, 13.9_
+  - [x] 5.8 Group related incidents: per relevant candidate a global `rank`, a `group` and a `group_reason` (same root cause and fix); one entry per group led by its best-ranked incident, others under `related`; top 5 counts groups; note counts distinct problems
+    - Owner: create the matching `incident-assist` version in Langfuse with all labels
+    - _Requirements: 12.1d, 12.7_
+  - [x] 5.9 Ground LLM output in the input: drop IDs not sent (validation and assist), drop next steps citing no incident or a non-relevant one, renumber ranks and groups; incident fields come from the database
+    - _Requirements: 12.5, 12.5a_
   - [x] 5.4 Implement `container.build_container`, `api/deps.py`, the FastAPI lifespan and the exception handler
     - _Requirements: 3.4, 3.5, 14.4_
   - [x] 5.5 Implement routes: `POST /ingest`, `GET /search`, `GET /incidents/{id}`, `POST /assist`, `GET /catalog`, `GET /debug/trace/{correlation_id}`, `GET /health`, all with `traced_endpoint` except `/debug/trace`
@@ -100,15 +105,26 @@ flowchart LR
     - _Requirements: 1.5_
 
 - [ ] 6. End-to-end run on EC2 (checkpoint: structure works)
-  - [ ] 6.1 Deploy to EC2, install dependencies, start uvicorn (owner)
+  - [x] 6.1 Deploy to EC2, install dependencies, start uvicorn (owner)
     - _Requirements: 1.1, 1.2_
   - [ ] 6.2 Run `cli catalog`, commit `data/service_catalog.json`, run `cli seed`
+    - [x] `cli catalog` (400 events) and `cli seed` (800 ingested and embedded, lists = 1) on EC2
+    - [ ] Copy `data/service_catalog.json` from EC2 and commit it (without it the dataset is not repeatable)
     - _Requirements: 5.1, 6.1_
   - [ ] 6.3 Call each endpoint with curl; check counts, search results, assist answer, and the trace and log events in Langfuse
-    - _Requirements: 7.11, 10.1, 12.7, 13.2, 13.7_
+    - [x] `/health`, `/search`, `/assist` (validation), `/debug/trace`
+    - [ ] `/assist` after 5.8 and 5.9 (groups, `group_reason`, grounding)
+    - [ ] `/incidents/{id}` and an unknown id (404)
+    - [ ] `/catalog`
+    - [ ] `/ingest` twice (second run all skipped) and with an empty body (embeds pending only)
+    - [ ] One failure path: an unreachable LLM or prompt gives a clear 503 that says what to set
+    - _Requirements: 7.11, 10.1, 12.7, 13.2, 13.7, 14.4_
   - [ ] 6.4 Fix issues found; repeat until all endpoints work
+    - [ ] Open: `incident-validation` judges strictly in the first batch and loosely in later ones (passed "concerns payment failures"); tighten the prompt
 
 - [ ] 7. Unit tests (start after task 6 passes)
+  - [ ] 7.0 Minimum required by the take-home, first: `guardrails` (unknown IDs dropped, uncited steps dropped, renumbering, rejections) and `query_builder` (filters, parameters)
+    - _Requirements: 12.5, 10.6_
   - [ ] 7.1 Core: `normalize`, `fingerprint`, `embedding_text`, settings, secrets loader
     - _Requirements: 2.2, 7.5, 7.7, 8.1_
   - [ ] 7.2 Database stream: `query_builder` (filters, parameterized, tiebreak, NULL embeddings), `SchemaService`, `IngestService` (every outcome, embedding failure, empty body), `SeedService` (reproducible, weights, 200-500)
@@ -132,7 +148,10 @@ flowchart LR
   - [ ] 8.3 Ask the owner about EC2 deployment steps, then write `README.md` (run steps, curl examples, tests)
     - _Requirements: 16.1_
   - [ ] 8.4 Write `PROMPTS.md` from `docs/prompt-log.md`, `AI-NOTES.md` (at least 2 AI mistakes), `TRADEOFFS.md` (Requirement 17 deviations, known risks, next steps)
+    - `PROMPTS.md`: 5-10 prompts in the take-home template (adds "what you kept", "what you changed manually", follow-ups, commit links)
     - _Requirements: 16.2, 17.1-17.4_
+  - [ ] 8.5 Sync `architecture.md`, `trace-architecture.md` and `design.md` with the assist flow (validation, groups, grounding)
+  - [ ] 8.6 Remove the pre-task leftovers (owner approval): `src/dayforce_task`, `SETUP.md`, `docs/01-03`, Dayforce vars in `.env.example`, old README; write `.env.example` with the real settings
 
 ## Notes
 

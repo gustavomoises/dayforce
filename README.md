@@ -101,21 +101,20 @@ The question "database connection timeouts in payments", filtered to `prod`, on 
 
 ```mermaid
 flowchart LR
-    Q["question"] --> S["hybrid search<br/>30 most similar hits"]
+    Q["question"] --> S["hybrid search<br/>15 most similar hits"]
     S --> V["incident-validation<br/>same failure type?"]
-    V -->|"2 valid"| A["incident-assist<br/>rank and group"]
-    V -->|"28 not valid"| X["kept in validation<br/>with the reason,<br/>never in the answer"]
-    A --> R["relevant_incidents:<br/>2 groups"]
+    V -->|"0 valid"| R["status: no_relevant_incidents<br/>relevant_incidents empty"]
+    V -->|"15 not valid"| X["kept in validation<br/>with the reason,<br/>never in the answer"]
 ```
 
-Search ranks by words and meaning, so "payment", "timeout" and "connection" also bring back expired certificates, DNS failures, gateway errors and slow queries. Validation asks a stricter question, whether the failure type is the same, and rejects 28 of the 30 hits, each with a reason such as "connection errors to the payment gateway, not the database". Only the 2 valid incidents reach `incident-assist`, which sees two different root causes and fixes and returns 2 groups. The response says "only 2 distinct problems found" rather than padding the list to 3-5.
+Search ranks by words and meaning, so "payment", "timeout" and "connection" bring back expired gateway certificates, DNS failures and database permission errors. Validation asks a stricter question, whether the failure type is the same, and rejects all 15 hits, each with a reason such as "an expired certificate connecting to a bank gateway, not a database timeout". Nothing reaches `incident-assist`, and the answer says no relevant incident was found rather than padding the list with look-alikes.
 
 | Response field | What it shows in this run |
 |----------------|---------------------------|
-| `validation` | all 30 hits search found, `valid` true or false, each with a reason: the audit trail |
-| `candidates` | the 2 valid incidents as judged by `incident-assist` (relevant, rank, group) |
-| `relevant_incidents` | `inc-00156` (connections held during gateway calls) and `inc-00517` (connection leak on an error path) |
-| `related` | empty here: the `dev` copies of both events were filtered out by `environment: prod`; without the filter they appear under their group |
+| `status` | `no_relevant_incidents` |
+| `validation` | all 15 hits search found, each `valid: false` with a reason: the audit trail |
+| `candidates`, `relevant_incidents` | empty |
+| `missing_info` | what to ask next, for example "What is the exact error message?" |
 
 Validation keeps only hits with the same failure type as the question, so the assist call sees no noise. The assist call groups incidents that share a root cause and fix, so one problem appears once, with its other occurrences under `related`. The guardrails never trust the LLM with data: IDs it was not given are dropped, and titles, environments, severities and dates come from the database. Results are never padded, so the answer may hold 1 or 2 groups with a note. Details are in [architecture.md](architecture.md#assist).
 
@@ -173,7 +172,7 @@ The ingest call writes to the shared database. `inc-90001` is outside the seeded
 ```bash
 curl -s -X POST $BASE/assist -H "Content-Type: application/json" \
   -H "X-Correlation-ID: readme-assist-1" \
-  -d '{"question": "database connection timeouts in payments"}' | python3 -m json.tool
+  -d '{"question": "Payroll exports for our largest tenants time out before the file is ready. How did we fix this before?"}' | python3 -m json.tool
 ```
 
 The body accepts the same filters as `/search`, plus `candidate_multiplier` (1-5, default 3; the target is n × 5 valid candidates). An abbreviated response:
@@ -182,15 +181,16 @@ The body accepts the same filters as `/search`, plus `candidate_multiplier` (1-5
 {
   "status": "answered",
   "relevant_incidents": [
-    {"group": 1, "rank": 1, "id": "inc-00156", "title": "New payment methods fail during traffic spike",
-     "reason": "...", "group_reason": "Requests held database connections while waiting for the gateway ...",
-     "environment": "prod", "severity": "high",
-     "related": [{"rank": 2, "id": "inc-00155", "environment": "dev", "...": "..."}]},
-    {"group": 2, "rank": 3, "id": "inc-00517", "title": "Database connection leak interrupted payment submissions",
-     "related": [{"rank": 4, "id": "inc-00518", "...": "..."}]}
+    {"group": 1, "rank": 1, "id": "inc-00341", "title": "Payroll exports timed out for large tenants",
+     "reason": "...",
+     "group_reason": "A query change caused full earnings-table scans; adding the missing index and reverting the query change restored normal export times.",
+     "related": []}
   ],
-  "note": "only 2 distinct problems found",
-  "next_steps": ["Release connections before the external gateway call ... [inc-00156, inc-00155]", "..."],
+  "note": "only 1 distinct problem found",
+  "next_steps": [
+    "Check for the query change that caused payroll exports to scan the full earnings table. [inc-00341]",
+    "Add the missing index and revert the query change if the same cause is confirmed. [inc-00341]"
+  ],
   "customer_draft": "...",
   "missing_info": ["What is the exact error message?", "..."],
   "candidates": ["every grounded verdict"],

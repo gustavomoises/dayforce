@@ -14,7 +14,7 @@ What was built, what was left out, and the decisions that differ from the take-h
 * Observability: correlation id per request in the header, every log line and every error body. JSON logs to stdout and Langfuse. One Langfuse trace per request with nested observations and the `/assist` steps `tool:search input`, `tool:search output` and `selected_ids`.
 * Prompts versioned in Langfuse per environment label, copied to `prompts/`.
 * Timeouts on every external call, input limits, `{error, detail, correlation_id}` errors that say what to set.
-* 343 offline unit tests (fakes and Hypothesis property tests), live tests behind `API_BASE_URL`.
+* 346 offline unit tests (fakes and Hypothesis property tests), live tests behind `API_BASE_URL`.
 
 ## What is not done
 
@@ -31,7 +31,7 @@ What was built, what was left out, and the decisions that differ from the take-h
 * **Seeding is a CLI command, not an endpoint.** `python -m app.cli seed` drops and rebuilds the incident tables, which is too destructive for a public endpoint. `POST /ingest` upserts a body, or with an empty body only retries pending embeddings.
 * **Search depends on OpenAI for query embeddings.** When OpenAI is unavailable, `/search` returns 503 instead of silently falling back to text-only results that would rank differently. Query embeddings are stored in `query_embeddings`, so a repeated query makes no OpenAI call.
 * **Endpoints are public without authentication** for the review period, so reviewers can call them without setup.
-* **800 incidents, above the take-home's 500.** The catalog has 400 events (20 services × 20), and the seed turns each into 2 incidents with different environment and severity to model recurring failures. `SEED_REPEATS=1` gives 400.
+* **500 incidents, one per catalog event (25 services × 20 events, `SEED_REPEATS=1`).** This matches the take-home's 200-500. An earlier version seeded 800 (400 events × 2 repeats) to model recurring failures; it was dropped to stay in range, and 500 × 2 would pass the 999 cap that keeps IVFFlat at one exact list. 25 events per service was also tried, but one LLM call for 25 events passed the 30 s timeout, so the extra 100 came from 5 more services instead.
 * **Secrets come from AWS Secrets Manager, not environment variables.** The OpenAI key, Langfuse keys and database credentials are read with the EC2 instance role. Non-secret settings (region, Langfuse host, embedding model, timeouts, limits) are environment variables. The chat model and its settings come from the Langfuse prompt config, not `LLM_MODEL`.
 * **A repeated id in one ingest batch: last version wins.** Items apply in order and the id is written once. A re-run leaves the data and embeddings unchanged, but may report those items as `updated` instead of `skipped`.
 * **Validation adds LLM calls and latency for precision.** `/assist` checks hits with `incident-validation` in batches of up to 15, at most 4 calls, before the `incident-assist` call. This removes incidents that only share a product area or a word, at the cost of about 60 to 100 s per `/assist`.

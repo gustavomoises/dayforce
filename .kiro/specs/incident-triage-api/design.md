@@ -440,7 +440,7 @@ Support code converts library exceptions into the domain errors of `app/core/err
 
 ## Testing Strategy
 
-- **Unit tests** (`tests/unit/`, one file per component, 343 tests): fakes injected through `core/ports.py` and `app.dependency_overrides`. No AWS, database, OpenAI or Langfuse access.
+- **Unit tests** (`tests/unit/`, one file per component, 346 tests): fakes injected through `core/ports.py` and `app.dependency_overrides`. No AWS, database, OpenAI or Langfuse access.
 - **Property tests** (`tests/unit/test_properties.py`): Properties 1, 2, 3, 9, 10 and 11 use generated inputs (Hypothesis); the others use focused examples.
 - **Schema sync test** (`test_prompt_schemas.py`): `prompts/*.config.json` schemas equal the schemas generated from `ValidationAnswer`, `AssistAnswer` and `CatalogBatch`.
 - **Live tests** (`tests/live/`, marker `live`): call the running EC2 API, skipped unless `API_BASE_URL` is set; cover ingest twice, search, details, assist, catalog and debug trace.

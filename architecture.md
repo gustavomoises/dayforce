@@ -204,7 +204,7 @@ flowchart LR
     SEED -->|"last: IVFFlat index"| PG
 ```
 
-`cli catalog` asks the LLM once per service (default 20 services × 20 events = 400 events) and the file is committed, because LLM output is not repeatable. `cli seed` turns each event into `SEED_REPEATS` (2) incidents with a fixed seed, so every run builds the same 800 incidents. `POST /ingest` uses the same `IngestService` later. Details: [database-architecture.md](database-architecture.md).
+`cli catalog` asks the LLM once per service (default 25 services × 20 events = 500 events) and the file is committed, because LLM output is not repeatable. `cli seed` turns each event into `SEED_REPEATS` (1) incidents with a fixed seed, so every run builds the same 500 incidents. `POST /ingest` uses the same `IngestService` later. Details: [database-architecture.md](database-architecture.md).
 
 ## /assist
 
@@ -450,7 +450,7 @@ Strict mode makes every field required and forbids extra keys; nullable fields a
 
 | Kind | Where | Notes |
 |------|-------|-------|
-| Unit | `tests/unit/`, one file per component | 343 tests, offline. Fakes are injected through the `core/ports.py` Protocols; route tests use `app.dependency_overrides`. No AWS, database, OpenAI or Langfuse. |
+| Unit | `tests/unit/`, one file per component | 346 tests, offline. Fakes are injected through the `core/ports.py` Protocols; route tests use `app.dependency_overrides`. No AWS, database, OpenAI or Langfuse. |
 | Property | `tests/unit/test_properties.py` | Hypothesis tests for design Properties 1, 2, 3, 9, 10 and 11 |
 | Schema sync | `tests/unit/test_prompt_schemas.py` | `prompts/*.config.json` equal the schemas generated from the output models |
 | Live | `tests/live/`, marker `live` | `pytest -m live` with `API_BASE_URL` set; skipped otherwise. Plain `pytest` runs unit tests only. |

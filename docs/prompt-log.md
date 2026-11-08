@@ -214,3 +214,16 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   even theto get ill be not psosible because we will not be able to embed
   ```
 - Result: no code change. The AI explained that 403 means the client is not allowed, so 503 (504 on timeout) is correct for an upstream outage. The owner then saw that skipping validation cannot help: the query embedding and the assist call need OpenAI too. Recorded as an observation in TRADEOFFS.md (with a diagram) and architecture.md. Rejected: skipping only validation, and returning full-text hits marked "not validated".
+
+**#20 Resize the dataset to 500**
+- Tool: Kiro (chat)
+- Goal: match the take-home's 200-500 incidents.
+- Prompt:
+  ```
+  redo the catalog set to 25 and set n in the seed to 1 so we will have 500
+  ```
+- Follow-up, after `cli catalog` failed with `LLMTimeout` (one call for 25 events passed the 30 s limit):
+  ```
+  we have to do B 25 services and 20 events
+  ```
+- Result: 25 services (5 new: scheduling, leave, tax, hr-core, integration-hub) × 20 events × `SEED_REPEATS=1` = 500 incidents. Catalog `max_output_tokens` stays 12000. Rejected: 25 events per service (timeout), raising the LLM timeout (slower setup for no gain), keeping 800 (above the take-home's range).

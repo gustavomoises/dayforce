@@ -53,7 +53,7 @@ flowchart LR
     - After ingest and embeddings: `lists = clamp(embedded_rows / IVFFLAT_ROWS_PER_LIST, 1, IVFFLAT_MAX_LISTS)`, `CREATE INDEX ... USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)`, then `ANALYZE incidents`
     - Built last because IVFFlat learns its lists from the rows present when it is created
     - _Requirements: 6.6, 6.7_
-  - [x] 2.10 Repeat each catalog event `SEED_REPEATS` times (default 2) with distinct (environment, severity) pairs and own dates; size check 200-999
+  - [x] 2.10 Repeat each catalog event `SEED_REPEATS` times (default 1) with distinct (environment, severity) pairs and own dates; size check 200-999
     - _Requirements: 6.3a, 6.5, 17.5_
   - [x] 2.9 Use the index in the vector branch with probes
     - Vector branch reads `incidents` directly (not the shared CTE) and orders by `embedding <=> query` with `LIMIT`, so the planner can use the index; similarity and threshold applied on that result
@@ -107,7 +107,7 @@ flowchart LR
 - [x] 6. End-to-end run on EC2 (checkpoint: structure works)
   - [x] 6.1 Deploy to EC2, install dependencies, start uvicorn (owner)
     - _Requirements: 1.1, 1.2_
-  - [x] 6.2 Run `cli catalog` (400 events) and `cli seed` (800 ingested and embedded, lists = 1) on EC2
+  - [x] 6.2 Run `cli catalog` (500 events) and `cli seed` (500 ingested and embedded, lists = 1) on EC2
     - _Requirements: 5.1, 6.1_
   - [x] 6.3 Copy `data/service_catalog.json` from EC2 and commit it
     - Without it the dataset is not repeatable

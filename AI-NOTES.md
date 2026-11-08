@@ -47,7 +47,7 @@ flowchart LR
 
 * `ruff format` and `ruff check` on every change (config in `pyproject.toml`).
 * `scripts/check_imports.py` imports every module, which catches broken wiring and import-time side effects.
-* 343 offline unit tests (`python -m pytest`), using fakes through the `core/ports.py` Protocols and FastAPI `dependency_overrides`, plus Hypothesis property tests for normalization, hashing, idempotent ingest, parameterized queries, grounding and "assist never pads". No AWS access is needed.
+* 346 offline unit tests (`python -m pytest`), using fakes through the `core/ports.py` Protocols and FastAPI `dependency_overrides`, plus Hypothesis property tests for normalization, hashing, idempotent ingest, parameterized queries, grounding and "assist never pads". No AWS access is needed.
 * Live tests marked `live` that call the EC2 API, skipped unless `API_BASE_URL` is set.
 * Manual curl calls against http://18.222.137.172:8000 with a fixed `X-Correlation-ID`, then the matching trace through `GET /debug/trace/{correlation_id}` and the Langfuse UI.
 * Failure paths on EC2: `LLM_TIMEOUT_SECONDS=0.01` gives 504 `llm_timeout`, and an unreachable `LANGFUSE_HOST` gives 503 `langfuse_unavailable`. Both errors say what to set and contain no stack trace.

@@ -3,7 +3,7 @@
 Search and an AI assistant for incident triage. FastAPI on AWS EC2, PostgreSQL with pgvector on RDS, OpenAI for the LLM and embeddings, and Langfuse for prompts and tracing.
 
 - **Live API:** http://18.222.137.172:8000 (OpenAPI docs at [/docs](http://18.222.137.172:8000/docs)). No auth during the review period.
-- **Dataset:** 800 synthetic incidents from a committed catalog and a fixed seed.
+- **Dataset:** 500 synthetic incidents from a committed catalog and a fixed seed.
 - **Assignment:** [incident-triage-take-home.md](incident-triage-take-home.md), the original take-home this project answers. [TRADEOFFS.md](TRADEOFFS.md) lists where the build differs from it, and why.
 - **Docs:** the architecture is defined in three files, each with Mermaid diagrams. See [Documentation](#documentation) for what each one covers.
 
@@ -249,7 +249,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 **4. Build the data**
 
 ```bash
-.venv/bin/python -m app.cli seed      # drops and rebuilds the incident tables: 800 incidents, embeddings, IVFFlat index
+.venv/bin/python -m app.cli seed      # drops and rebuilds the incident tables: 500 incidents, embeddings, IVFFlat index
 ```
 
 `seed` creates the schema itself. The other commands are `schema` (create tables only, never drops), `catalog` (regenerate `data/service_catalog.json` with the LLM; the committed file makes this optional) and `schemas` (print the LLM output JSON schemas for the Langfuse configs). Each command prints its `correlation_id`.
@@ -269,7 +269,7 @@ To deploy a change: `git pull`, then `pkill -f "[u]vicorn main:app"` and start a
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt     # ruff
-.venv/bin/python -m pytest                        # 343 unit tests, offline, about 8 s
+.venv/bin/python -m pytest                        # 346 unit tests, offline, about 8 s
 API_BASE_URL=http://18.222.137.172:8000 .venv/bin/python -m pytest -m live   # 10 live tests against the API
 .venv/bin/ruff format --check . && .venv/bin/ruff check .
 ```

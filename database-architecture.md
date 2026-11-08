@@ -101,10 +101,10 @@ SQL files, applied in name order: `001_types.sql`, `002_tags.sql`, `003_incident
 |--------|-------|-----|
 | Index | `USING ivfflat (embedding vector_cosine_ops) WITH (lists = n)` | Cosine is how OpenAI embeddings are compared (`<=>`). |
 | When | last step of `cli seed`, after ingest and embedding, then `ANALYZE incidents` | IVFFlat learns its lists from the rows present at creation; built on an empty table, recall collapses. That is why it is not in the DDL files. |
-| `lists` | `clamp(embedded_rows / 1000, 1, IVFFLAT_MAX_LISTS = 10)` | pgvector guidance is rows / 1000. The seed has 800 rows, so `lists = 1`. |
+| `lists` | `clamp(embedded_rows / 1000, 1, IVFFLAT_MAX_LISTS = 10)` | pgvector guidance is rows / 1000. The seed has 500 rows, so `lists = 1`. |
 | `ivfflat.probes` | `IVFFLAT_PROBES` = 10, set per search transaction with `set_config('ivfflat.probes', '10', true)` | probes ≥ lists scans every list: exact results, filters never lose rows, same order every time. |
 
-At 800 rows the index gives no speed gain; it is there so the query shape, settings and seed step are already right when the data grows. Past about 10,000 rows, raise `IVFFLAT_MAX_LISTS` and accept approximate results, or switch to HNSW. Rows added later through `POST /ingest` are found too; the lists are retrained on the next seed.
+At 500 rows the index gives no speed gain; it is there so the query shape, settings and seed step are already right when the data grows. Past about 10,000 rows, raise `IVFFLAT_MAX_LISTS` and accept approximate results, or switch to HNSW. Rows added later through `POST /ingest` are found too; the lists are retrained on the next seed.
 
 ## Search (hybrid, one code path for `/search` and `/assist`)
 
@@ -304,7 +304,7 @@ flowchart TD
     ING --> IDX["IVFFlat index with lists from embedded rows, ANALYZE"]
 ```
 
-The catalog is loaded, checked and turned into incidents before anything is dropped, so a bad catalog never leaves an empty database. The default 400 events × `SEED_REPEATS` 2 give 800 incidents; below 1,000 keeps the IVFFlat index at one list (exact search).
+The catalog is loaded, checked and turned into incidents before anything is dropped, so a bad catalog never leaves an empty database. The default 500 events × `SEED_REPEATS` 1 give 500 incidents; below 1,000 keeps the IVFFlat index at one list (exact search).
 
 | Rule | Value | Why |
 |------|-------|-----|

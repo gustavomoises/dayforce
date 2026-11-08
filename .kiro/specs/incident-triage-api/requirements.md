@@ -84,7 +84,7 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 #### Acceptance Criteria
 
 1. WHEN `cli catalog` is run, THE Catalog_Service SHALL call the LLM once per service with the Langfuse prompt `incident-catalog` and save the result as `{service: [events]}` to the Catalog.
-2. WHERE no services or event count are given, THE Catalog_Service SHALL use the 20 default services and 20 events per service.
+2. WHERE no services or event count are given, THE Catalog_Service SHALL use the 25 default services and 20 events per service.
 3. IF more than 50 services, fewer than 1 service, or an event count outside 1-50 is given, THEN THE Catalog_Service SHALL reject the input with a clear message.
 4. WHEN an LLM answer does not contain exactly the requested number of events, THE Catalog_Service SHALL reject that answer.
 5. WHEN `GET /catalog` is called, THE Triage_API SHALL return the Catalog file without calling the LLM.
@@ -99,7 +99,7 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 1. WHEN `cli seed` is run, THE Seed_Service SHALL, without asking for confirmation, drop exactly the six Incident_Tables, call the Schema_Service, fill the Type_Tables from fixed lists, generate incidents from the Catalog and pass them to the Ingest_Service.
 2. THE Seed_Service SHALL never drop `query_embeddings`, the `vector` extension, the schema or any other table.
 3. THE Seed_Service SHALL generate incidents with a private `random.Random(SEED)`, services in alphabetical order, IDs in that order, `created_at` uniform between 2026-01-01 and 2026-10-31 UTC, environment weights dev 15 / qa 15 / stage 20 / prod 50 and severity weights critical 10 / high 25 / medium 40 / low 25.
-3a. THE Seed_Service SHALL turn each catalog event into `SEED_REPEATS` incidents (default 2), each with a different (environment, severity) pair and its own `created_at`, so no copy is a content-hash duplicate.
+3a. THE Seed_Service SHALL turn each catalog event into `SEED_REPEATS` incidents (default 1), each with a different (environment, severity) pair and its own `created_at`, so no copy is a content-hash duplicate.
 4. WHEN `cli seed` is run twice with the same Catalog and `SEED`, THE Seed_Service SHALL produce identical incidents.
 5. IF catalog events × `SEED_REPEATS` is below 200 or above 999, or `SEED_REPEATS` is outside 1-16, THEN THE Seed_Service SHALL stop with a message explaining what to change.
 6. WHEN the seed has ingested and embedded the incidents, THE Seed_Service SHALL create an IVFFlat index on `incidents.embedding` with `vector_cosine_ops`, with `lists` = embedded rows / 1000, at least 1 and at most `IVFFLAT_MAX_LISTS` (10), and then run `ANALYZE incidents`.
@@ -260,4 +260,4 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 2. THE `TRADEOFFS.md` SHALL explain that seeding is a CLI command and that `POST /ingest` upserts a body or retries pending embeddings.
 3. THE `TRADEOFFS.md` SHALL explain that search depends on OpenAI for query embeddings and returns 503 when it is unavailable.
 4. THE `TRADEOFFS.md` SHALL explain that the endpoints are public without authentication for the review period.
-5. THE `TRADEOFFS.md` SHALL explain that the seed creates 800 incidents (400 catalog events × 2 repeats), above the take-home's 500, to model recurring failures; `SEED_REPEATS=1` gives 400.
+5. THE `TRADEOFFS.md` SHALL explain that the seed creates 500 incidents (500 catalog events × 1 repeat) and why the earlier 800-incident seed and 25 events per service were dropped.

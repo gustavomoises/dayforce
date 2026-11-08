@@ -24,6 +24,7 @@ def test_defaults_match_the_spec() -> None:
     assert settings.embedding_batch_size == 100
     assert settings.ingest_max_items == 500
     assert (settings.seed_min_incidents, settings.seed_max_incidents) == (200, 999)
+    assert settings.seed_repeats == 1
     assert settings.ivfflat_max_lists == 10
 
 

@@ -24,7 +24,7 @@ DEFAULT_SERVICES: tuple[str, ...] = (
     "file-storage",
     "web-frontend",
 )
-DEFAULT_EVENTS_PER_SERVICE = 20
+DEFAULT_EVENTS_PER_SERVICE = 25
 
 MAX_SERVICES = 50
 MAX_EVENTS_PER_SERVICE = 50

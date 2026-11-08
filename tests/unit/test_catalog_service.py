@@ -76,7 +76,7 @@ def test_defaults_are_20_services_with_20_events() -> None:
     request = CatalogRequest()
 
     assert request.services == list(DEFAULT_SERVICES)
-    assert (len(request.services), request.events_per_service) == (20, 20)
+    assert (len(request.services), request.events_per_service) == (20, 25)
 
 
 def test_service_names_are_normalized_and_deduplicated() -> None:

@@ -23,8 +23,13 @@ DEFAULT_SERVICES: tuple[str, ...] = (
     "message-queue",
     "file-storage",
     "web-frontend",
+    "scheduling-service",
+    "leave-service",
+    "tax-service",
+    "hr-core-service",
+    "integration-hub",
 )
-DEFAULT_EVENTS_PER_SERVICE = 25
+DEFAULT_EVENTS_PER_SERVICE = 20
 
 MAX_SERVICES = 50
 MAX_EVENTS_PER_SERVICE = 50

@@ -260,4 +260,4 @@ It runs only on an existing AWS EC2 instance (us-east-2) with RDS PostgreSQL (pg
 2. THE `TRADEOFFS.md` SHALL explain that seeding is a CLI command and that `POST /ingest` upserts a body or retries pending embeddings.
 3. THE `TRADEOFFS.md` SHALL explain that search depends on OpenAI for query embeddings and returns 503 when it is unavailable.
 4. THE `TRADEOFFS.md` SHALL explain that the endpoints are public without authentication for the review period.
-5. THE `TRADEOFFS.md` SHALL explain that the seed creates 500 incidents (500 catalog events × 1 repeat) and why the earlier 800-incident seed and 25 events per service were dropped.
+5. THE `TRADEOFFS.md` SHALL state that the seed creates 500 incidents (25 services × 20 events, `SEED_REPEATS=1`).

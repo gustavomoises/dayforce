@@ -222,8 +222,8 @@ App prompts (`incident-assist`, `incident-catalog`) are versioned in Langfuse an
   ```
   redo the catalog set to 25 and set n in the seed to 1 so we will have 500
   ```
-- Follow-up, after `cli catalog` failed with `LLMTimeout` (one call for 25 events passed the 30 s limit):
+- Follow-up:
   ```
   we have to do B 25 services and 20 events
   ```
-- Result: 25 services (5 new: scheduling, leave, tax, hr-core, integration-hub) × 20 events × `SEED_REPEATS=1` = 500 incidents. Catalog `max_output_tokens` stays 12000. Rejected: 25 events per service (timeout), raising the LLM timeout (slower setup for no gain), keeping 800 (above the take-home's range).
+- Result: parameters only, no architecture change. Default services 20 → 25, `SEED_REPEATS` 2 → 1: 25 × 20 × 1 = 500 incidents.
